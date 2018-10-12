@@ -53,7 +53,6 @@ EXTN(jsimd_ycc_rgb_convert_avx2):
     collect_args 5
     push        rbx
 
-    mov         ecx, r10d               ; num_cols
     test        r10d, r10d
     jz          near .return
 
@@ -89,7 +88,7 @@ align 16
     push        rdx
     push        rbx
     push        rsi
-    push        rcx                     ; col
+    mov         ecx, r10d               ; num_cols
 
     mov         rsi, JSAMPROW [rsi]     ; inptr0
     mov         rbx, JSAMPROW [rbx]     ; inptr1
@@ -261,25 +260,26 @@ align 16
                                         ;       1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q)
     vpunpcklqdq ymmC, ymmF, ymmC        ; ymmC=(2A 0B 1B 2B 0C 1C 2C 0D 1D 2D 0E 1E 2E 0F 1F 2F
                                         ;       2Q 0R 1R 2R 0S 1S 2S 0T 1T 2T 0U 1U 2U 0V 1V 2V)
+    vperm2i128  ymmG, ymmG, ymmG, 0x01  ; ymmG=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
+    					;	15 25 06 16 26 07 17 27 08 18 28 09 19 29 0A 1A)
 
-    vperm2i128  ymmA, ymmH, ymmG, 0x20  ; ymmA=(00 10 20 01 11 21 02 12 22 03 13 23 04 14 24 05
+    vpblendd    ymmA, ymmH, ymmG, 0xF0  ; ymmA=(00 10 20 01 11 21 02 12 22 03 13 23 04 14 24 05
                                         ;       15 25 06 16 26 07 17 27 08 18 28 09 19 29 0A 1A)
-    vperm2i128  ymmD, ymmC, ymmH, 0x30  ; ymmD=(2A 0B 1B 2B 0C 1C 2C 0D 1D 2D 0E 1E 2E 0F 1F 2F
+    vpblendd    ymmD, ymmC, ymmH, 0xF0  ; ymmD=(2A 0B 1B 2B 0C 1C 2C 0D 1D 2D 0E 1E 2E 0F 1F 2F
                                         ;       0G 1G 2G 0H 1H 2H 0I 1I 2I 0J 1J 2J 0K 1K 2K 0L)
-    vperm2i128  ymmF, ymmG, ymmC, 0x31  ; ymmF=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
+    vpblendd    ymmF, ymmG, ymmC, 0xF0  ; ymmF=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
+                                        ;       2Q 0R 1R 2R 0S 1S 2S 0T 1T 2T 0U 1U 2U 0V 1V 2V)
+
+;    vperm2i128  ymmA, ymmH, ymmG, 0x20  ; ymmA=(00 10 20 01 11 21 02 12 22 03 13 23 04 14 24 05
+;                                        ;       15 25 06 16 26 07 17 27 08 18 28 09 19 29 0A 1A)
+;    vperm2i128  ymmD, ymmC, ymmH, 0x30  ; ymmD=(2A 0B 1B 2B 0C 1C 2C 0D 1D 2D 0E 1E 2E 0F 1F 2F
+;                                        ;       0G 1G 2G 0H 1H 2H 0I 1I 2I 0J 1J 2J 0K 1K 2K 0L)
+;    vperm2i128  ymmF, ymmG, ymmC, 0x31  ; ymmF=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
                                         ;       2Q 0R 1R 2R 0S 1S 2S 0T 1T 2T 0U 1U 2U 0V 1V 2V)
 
     cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
 
-    test        edi, SIZEOF_YMMWORD-1
-    jnz         short .out1
-    ; --(aligned)-------------------
-    vmovntdq    YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
-    vmovntdq    YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
-    vmovntdq    YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmF
-    jmp         short .out0
-.out1:  ; --(unaligned)-----------------
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
     vmovdqu     YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmF
@@ -410,15 +410,6 @@ align 16
     cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
 
-    test        edi, SIZEOF_YMMWORD-1
-    jnz         short .out1
-    ; --(aligned)-------------------
-    vmovntdq    YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
-    vmovntdq    YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
-    vmovntdq    YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmC
-    vmovntdq    YMMWORD [rdi+3*SIZEOF_YMMWORD], ymmH
-    jmp         short .out0
-.out1:  ; --(unaligned)-----------------
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
     vmovdqu     YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmC
@@ -475,13 +466,13 @@ align 16
 %endif  ; RGB_PIXELSIZE ; ---------------
 
 .nextrow:
-    pop         rcx
     pop         rsi
     pop         rbx
     pop         rdx
     pop         rdi
     pop         rax
-
+    
+    mov         ecx, r10d               ; num_cols
     add         rsi, byte SIZEOF_JSAMPROW
     add         rbx, byte SIZEOF_JSAMPROW
     add         rdx, byte SIZEOF_JSAMPROW
@@ -489,7 +480,6 @@ align 16
     sub         eax, 1                     ; num_rows
     jg          near .rowloop
 
-    sfence                              ; flush the write buffer
 
 .return:
     pop         rbx
