@@ -39,13 +39,11 @@ F_0_228 equ (131072 - F_1_772)  ; FIX(2) - FIX(1.77200)
 
 EXTN(jconst_ycc_rgb_convert_avx2):
 
-PW_F0402        times 16 dw  F_0_402
-PW_MF0228       times 16 dw -F_0_228
-PW_MF0344_F0285 times 8  dw -F_0_344, F_0_285
-PW_ONE          times 16 dw  1
-PD_ONEHALF      times 8  dd  1 << (SCALEBITS - 1)
+PW_F0402         dw  F_0_402
+PW_MF0228        dw -F_0_228
+PW_MF0344_F0285  dw -F_0_344, F_0_285
 
-    alignz      32
+    alignz      64
 
 ; --------------------------------------------------------------------------
     SECTION     SEG_TEXT
