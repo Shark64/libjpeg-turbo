@@ -18,6 +18,8 @@
 ; [TAB8]
 
 %include "jcolsamp.inc"
+%use smartalign
+ALIGNMODE P6
 
 ; --------------------------------------------------------------------------
 ;
@@ -53,39 +55,36 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     push        rbx
 
     mov         ecx, r10d               ; col
-    test        rcx, rcx
+    test        r10d, r10d
     jz          near .return
 
-    push        rcx
 
-    mov         rdi, r11
-    mov         ecx, r12d
-    mov         rsi, JSAMPARRAY [rdi+0*SIZEOF_JSAMPARRAY]
-    mov         rbx, JSAMPARRAY [rdi+1*SIZEOF_JSAMPARRAY]
-    mov         rdx, JSAMPARRAY [rdi+2*SIZEOF_JSAMPARRAY]
-    mov         rdi, r13
-    mov         rsi, JSAMPROW [rsi+rcx*SIZEOF_JSAMPROW]  ; inptr0
-    mov         rbx, JSAMPROW [rbx+rcx*SIZEOF_JSAMPROW]  ; inptr1
-    mov         rdx, JSAMPROW [rdx+rcx*SIZEOF_JSAMPROW]  ; inptr2
-    mov         rdi, JSAMPROW [rdi]                      ; outptr
+    mov         rsi, JSAMPARRAY [r11+0*SIZEOF_JSAMPARRAY]
+    mov         rbx, JSAMPARRAY [r11+1*SIZEOF_JSAMPARRAY]
+    mov         rdx, JSAMPARRAY [r11+2*SIZEOF_JSAMPARRAY]
+    mov         rsi, JSAMPROW [rsi+r12*SIZEOF_JSAMPROW]  ; inptr0
+    mov         rbx, JSAMPROW [rbx+r12*SIZEOF_JSAMPROW]  ; inptr1
+    mov         rdx, JSAMPROW [rdx+r12*SIZEOF_JSAMPROW]  ; inptr2
+    mov         rdi, JSAMPROW [r13]                      ; outptr
+    lea		rax, [rel PW_F0402]
+    vpbroadcastw ymm8, [rax]  ; PW_F0402
+    vpbroadcastw ymm9, [rax+2]; PW_MF0228
+    vpxor	 xmm0, xmm0, xmm0
+    vpbroadcastd ymm10,[rax+4]; PW_MF0344_F0285
+    vpcmpeqd	 ymm1, ymm1, ymm1
+    vpsubw	 ymm11,ymm0, ymm1 ; PW_ONE
+    vpsubd	 ymm1, ymm0, ymm1 ; PD_ONE
+    vpslld	 ymm12,ymm1, (SCALEBITS -1) ; PD_ONEHALF
 
-    pop         rcx                     ; col
 
+align 16
 .columnloop:
-
-    vmovdqu     ymm6, YMMWORD [rbx]     ; ymm6=Cb(0123456789ABCDEFGHIJKLMNOPQRSTUV)
-    vmovdqu     ymm7, YMMWORD [rdx]     ; ymm7=Cr(0123456789ABCDEFGHIJKLMNOPQRSTUV)
-
-    vpxor       ymm1, ymm1, ymm1        ; ymm1=(all 0's)
+    vpmovzxbw   ymm4, [rbx]		; ymm4=Cb(0123456789ABCDEF)=Cb
+    vpmovzxbw	ymm6, [rbx+16]		; ymm6=Cb(GHIJKLMNOPQRSTUV)=CbH
+    vpmovzxbw	ymm0, [rdx]		; ymm0=Cr(0123456789ABCDEF)=CrL
+    vpmovzxbw	ymm7, [rdx+16]		; ymm7=Cr(GHIJKLMNOPQRSTUV)=CrH
     vpcmpeqw    ymm3, ymm3, ymm3
     vpsllw      ymm3, ymm3, 7           ; ymm3={0xFF80 0xFF80 0xFF80 0xFF80 ..}
-
-    vpermq      ymm6, ymm6, 0xd8        ; ymm6=Cb(01234567GHIJKLMN89ABCDEFOPQRSTUV)
-    vpermq      ymm7, ymm7, 0xd8        ; ymm7=Cr(01234567GHIJKLMN89ABCDEFOPQRSTUV)
-    vpunpcklbw  ymm4, ymm6, ymm1        ; ymm4=Cb(0123456789ABCDEF)=CbL
-    vpunpckhbw  ymm6, ymm6, ymm1        ; ymm6=Cb(GHIJKLMNOPQRSTUV)=CbH
-    vpunpcklbw  ymm0, ymm7, ymm1        ; ymm0=Cr(0123456789ABCDEF)=CrL
-    vpunpckhbw  ymm7, ymm7, ymm1        ; ymm7=Cr(GHIJKLMNOPQRSTUV)=CrH
 
     vpaddw      ymm5, ymm6, ymm3
     vpaddw      ymm2, ymm4, ymm3
@@ -107,17 +106,17 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     vpaddw      ymm7, ymm1, ymm1             ; ymm7=2*CrH
     vpaddw      ymm0, ymm3, ymm3             ; ymm0=2*CrL
 
-    vpmulhw     ymm6, ymm6, [rel PW_MF0228]  ; ymm6=(2*CbH * -FIX(0.22800))
-    vpmulhw     ymm4, ymm4, [rel PW_MF0228]  ; ymm4=(2*CbL * -FIX(0.22800))
-    vpmulhw     ymm7, ymm7, [rel PW_F0402]   ; ymm7=(2*CrH * FIX(0.40200))
-    vpmulhw     ymm0, ymm0, [rel PW_F0402]   ; ymm0=(2*CrL * FIX(0.40200))
+    vpmulhw     ymm6, ymm6, ymm9  ; ymm6=(2*CbH * -FIX(0.22800))
+    vpmulhw     ymm4, ymm4, ymm9  ; ymm4=(2*CbL * -FIX(0.22800))
+    vpmulhw     ymm7, ymm7, ymm8  ; ymm7=(2*CrH * FIX(0.40200))
+    vpmulhw     ymm0, ymm0, ymm8  ; ymm0=(2*CrL * FIX(0.40200))
 
-    vpaddw      ymm6, ymm6, [rel PW_ONE]
-    vpaddw      ymm4, ymm4, [rel PW_ONE]
+    vpaddw      ymm6, ymm6, ymm11
+    vpaddw      ymm4, ymm4, ymm11
     vpsraw      ymm6, ymm6, 1                ; ymm6=(CbH * -FIX(0.22800))
     vpsraw      ymm4, ymm4, 1                ; ymm4=(CbL * -FIX(0.22800))
-    vpaddw      ymm7, ymm7, [rel PW_ONE]
-    vpaddw      ymm0, ymm0, [rel PW_ONE]
+    vpaddw      ymm7, ymm7, ymm11
+    vpaddw      ymm0, ymm0, ymm11
     vpsraw      ymm7, ymm7, 1                ; ymm7=(CrH * FIX(0.40200))
     vpsraw      ymm0, ymm0, 1                ; ymm0=(CrL * FIX(0.40200))
 
@@ -128,24 +127,24 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     vpaddw      ymm7, ymm7, ymm1             ; ymm7=(CrH * FIX(1.40200))=(R-Y)H
     vpaddw      ymm0, ymm0, ymm3             ; ymm0=(CrL * FIX(1.40200))=(R-Y)L
 
-    vmovdqa     YMMWORD [wk(0)], ymm6        ; wk(0)=(B-Y)H
-    vmovdqa     YMMWORD [wk(1)], ymm7        ; wk(1)=(R-Y)H
+    vmovdqa     ymm13, ymm6        ; wk(0)=(B-Y)H
+    vmovdqa     ymm14, ymm7        ; wk(1)=(R-Y)H
 
     vpunpckhwd  ymm6, ymm5, ymm1
     vpunpcklwd  ymm5, ymm5, ymm1
-    vpmaddwd    ymm5, ymm5, [rel PW_MF0344_F0285]
-    vpmaddwd    ymm6, ymm6, [rel PW_MF0344_F0285]
+    vpmaddwd    ymm5, ymm5, ymm10
+    vpmaddwd    ymm6, ymm6, ymm10
     vpunpckhwd  ymm7, ymm2, ymm3
     vpunpcklwd  ymm2, ymm2, ymm3
-    vpmaddwd    ymm2, ymm2, [rel PW_MF0344_F0285]
-    vpmaddwd    ymm7, ymm7, [rel PW_MF0344_F0285]
+    vpmaddwd    ymm2, ymm2, ymm10
+    vpmaddwd    ymm7, ymm7, ymm10
 
-    vpaddd      ymm5, ymm5, [rel PD_ONEHALF]
-    vpaddd      ymm6, ymm6, [rel PD_ONEHALF]
+    vpaddd      ymm5, ymm5, ymm12
+    vpaddd      ymm6, ymm6, ymm12
     vpsrad      ymm5, ymm5, SCALEBITS
     vpsrad      ymm6, ymm6, SCALEBITS
-    vpaddd      ymm2, ymm2, [rel PD_ONEHALF]
-    vpaddd      ymm7, ymm7, [rel PD_ONEHALF]
+    vpaddd      ymm2, ymm2, ymm12
+    vpaddd      ymm7, ymm7, ymm12
     vpsrad      ymm2, ymm2, SCALEBITS
     vpsrad      ymm7, ymm7, SCALEBITS
 
@@ -154,15 +153,15 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     vpsubw      ymm5, ymm5, ymm1        ; ymm5=CbH*-FIX(0.344)+CrH*-FIX(0.714)=(G-Y)H
     vpsubw      ymm2, ymm2, ymm3        ; ymm2=CbL*-FIX(0.344)+CrL*-FIX(0.714)=(G-Y)L
 
-    vmovdqa     YMMWORD [wk(2)], ymm5   ; wk(2)=(G-Y)H
+    vmovdqa     ymm15, ymm5   ; wk(2)=(G-Y)H
 
-    mov         al, 2                   ; Yctr
+    mov         eax, 2                   ; Yctr
     jmp         short .Yloop_1st
 
 .Yloop_2nd:
-    vmovdqa     ymm0, YMMWORD [wk(1)]   ; ymm0=(R-Y)H
-    vmovdqa     ymm2, YMMWORD [wk(2)]   ; ymm2=(G-Y)H
-    vmovdqa     ymm4, YMMWORD [wk(0)]   ; ymm4=(B-Y)H
+    vmovdqa     ymm0, ymm14 ; ymm0=(R-Y)H
+    vmovdqa     ymm2, ymm15 ; ymm2=(G-Y)H
+    vmovdqa     ymm4, ymm13 ; ymm4=(B-Y)H
 
 .Yloop_1st:
     vmovdqu     ymm7, YMMWORD [rsi]     ; ymm7=Y(0123456789ABCDEFGHIJKLMNOPQRSTUV)
@@ -263,7 +262,7 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     vperm2i128  ymmF, ymmG, ymmC, 0x31  ; ymmF=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
                                         ;       2Q 0R 1R 2R 0S 1S 2S 0T 1T 2T 0U 1U 2U 0V 1V 2V)
 
-    cmp         rcx, byte SIZEOF_YMMWORD
+    cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
 
     test        rdi, SIZEOF_YMMWORD-1
@@ -279,11 +278,11 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     vmovdqu     YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmF
 .out0:
     add         rdi, byte RGB_PIXELSIZE*SIZEOF_YMMWORD  ; outptr
-    sub         rcx, byte SIZEOF_YMMWORD
+    sub         ecx, byte SIZEOF_YMMWORD
     jz          near .endcolumn
 
     add         rsi, byte SIZEOF_YMMWORD  ; inptr0
-    dec         al                        ; Yctr
+    sub         eax, 1                    ; Yctr
     jnz         near .Yloop_2nd
 
     add         rbx, byte SIZEOF_YMMWORD  ; inptr1
@@ -291,47 +290,47 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     jmp         near .columnloop
 
 .column_st64:
-    lea         rcx, [rcx+rcx*2]            ; imul ecx, RGB_PIXELSIZE
-    cmp         rcx, byte 2*SIZEOF_YMMWORD
+    lea         ecx, [rcx+rcx*2]            ; imul ecx, RGB_PIXELSIZE
+    cmp         ecx, byte 2*SIZEOF_YMMWORD
     jb          short .column_st32
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
     add         rdi, byte 2*SIZEOF_YMMWORD  ; outptr
     vmovdqa     ymmA, ymmF
-    sub         rcx, byte 2*SIZEOF_YMMWORD
+    sub         ecx, byte 2*SIZEOF_YMMWORD
     jmp         short .column_st31
 .column_st32:
-    cmp         rcx, byte SIZEOF_YMMWORD
+    cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st31
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     add         rdi, byte SIZEOF_YMMWORD    ; outptr
     vmovdqa     ymmA, ymmD
-    sub         rcx, byte SIZEOF_YMMWORD
+    sub         ecx, byte SIZEOF_YMMWORD
     jmp         short .column_st31
 .column_st31:
-    cmp         rcx, byte SIZEOF_XMMWORD
+    cmp         ecx, byte SIZEOF_XMMWORD
     jb          short .column_st15
     vmovdqu     XMMWORD [rdi+0*SIZEOF_XMMWORD], xmmA
     add         rdi, byte SIZEOF_XMMWORD    ; outptr
     vperm2i128  ymmA, ymmA, ymmA, 1
-    sub         rcx, byte SIZEOF_XMMWORD
+    sub         ecx, byte SIZEOF_XMMWORD
 .column_st15:
     ; Store the lower 8 bytes of xmmA to the output when it has enough
     ; space.
-    cmp         rcx, byte SIZEOF_MMWORD
+    cmp         ecx, byte SIZEOF_MMWORD
     jb          short .column_st7
     vmovq       XMM_MMWORD [rdi], xmmA
     add         rdi, byte SIZEOF_MMWORD
-    sub         rcx, byte SIZEOF_MMWORD
+    sub         ecx, byte SIZEOF_MMWORD
     vpsrldq     xmmA, xmmA, SIZEOF_MMWORD
 .column_st7:
     ; Store the lower 4 bytes of xmmA to the output when it has enough
     ; space.
-    cmp         rcx, byte SIZEOF_DWORD
+    cmp         ecx, byte SIZEOF_DWORD
     jb          short .column_st3
     vmovd       XMM_DWORD [rdi], xmmA
     add         rdi, byte SIZEOF_DWORD
-    sub         rcx, byte SIZEOF_DWORD
+    sub         ecx, byte SIZEOF_DWORD
     vpsrldq     xmmA, xmmA, SIZEOF_DWORD
 .column_st3:
     ; Store the lower 2 bytes of rax to the output when it has enough
@@ -341,12 +340,12 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     jb          short .column_st1
     mov         WORD [rdi], ax
     add         rdi, byte SIZEOF_WORD
-    sub         rcx, byte SIZEOF_WORD
-    shr         rax, 16
+    sub         ecx, byte SIZEOF_WORD
+    shr         eax, 16
 .column_st1:
     ; Store the lower 1 byte of rax to the output when it has enough
     ; space.
-    test        rcx, rcx
+    test        ecx, ecx
     jz          short .endcolumn
     mov         BYTE [rdi], al
 
@@ -354,7 +353,7 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
 
 %ifdef RGBX_FILLER_0XFF
     vpcmpeqb    ymm6, ymm6, ymm6        ; ymm6=XE=X(02468ACE********GIKMOQSU********)
-    vpcmpeqb    ymm7, ymm7, ymm7        ; ymm7=XO=X(13579BDF********HJLNPRTV********)
+    vmovdqa     ymm7, ymm6              ; ymm7=XO=X(13579BDF********HJLNPRTV********)
 %else
     vpxor       ymm6, ymm6, ymm6        ; ymm6=XE=X(02468ACE********GIKMOQSU********)
     vpxor       ymm7, ymm7, ymm7        ; ymm7=XO=X(13579BDF********HJLNPRTV********)
@@ -404,7 +403,7 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     vperm2i128  ymmH, ymmG, ymmF, 0x31  ; ymmH=(0O 1O 2O 3O 0P 1P 2P 3P 0Q 1Q 2Q 3Q 0R 1R 2R 3R
                                         ;       0S 1S 2S 3S 0T 1T 2T 3T 0U 1U 2U 3U 0V 1V 2V 3V)
 
-    cmp         rcx, byte SIZEOF_YMMWORD
+    cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
 
     test        rdi, SIZEOF_YMMWORD-1
@@ -422,11 +421,11 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymmH
 .out0:
     add         rdi, RGB_PIXELSIZE*SIZEOF_YMMWORD  ; outptr
-    sub         rcx, byte SIZEOF_YMMWORD
+    sub         ecx, byte SIZEOF_YMMWORD
     jz          near .endcolumn
 
     add         rsi, byte SIZEOF_YMMWORD  ; inptr0
-    dec         al
+    sub         eax, 1
     jnz         near .Yloop_2nd
 
     add         rbx, byte SIZEOF_YMMWORD  ; inptr1
@@ -434,41 +433,41 @@ EXTN(jsimd_h2v1_merged_upsample_avx2):
     jmp         near .columnloop
 
 .column_st64:
-    cmp         rcx, byte SIZEOF_YMMWORD/2
+    cmp         ecx, byte SIZEOF_YMMWORD/2
     jb          short .column_st32
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
     add         rdi, byte 2*SIZEOF_YMMWORD  ; outptr
     vmovdqa     ymmA, ymmC
     vmovdqa     ymmD, ymmH
-    sub         rcx, byte SIZEOF_YMMWORD/2
+    sub         ecx, byte SIZEOF_YMMWORD/2
 .column_st32:
-    cmp         rcx, byte SIZEOF_YMMWORD/4
+    cmp         ecx, byte SIZEOF_YMMWORD/4
     jb          short .column_st16
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     add         rdi, byte SIZEOF_YMMWORD    ; outptr
     vmovdqa     ymmA, ymmD
-    sub         rcx, byte SIZEOF_YMMWORD/4
+    sub         ecx, byte SIZEOF_YMMWORD/4
 .column_st16:
-    cmp         rcx, byte SIZEOF_YMMWORD/8
+    cmp         ecx, byte SIZEOF_YMMWORD/8
     jb          short .column_st15
     vmovdqu     XMMWORD [rdi+0*SIZEOF_XMMWORD], xmmA
     add         rdi, byte SIZEOF_XMMWORD    ; outptr
     vperm2i128  ymmA, ymmA, ymmA, 1
-    sub         rcx, byte SIZEOF_YMMWORD/8
+    sub         ecx, byte SIZEOF_YMMWORD/8
 .column_st15:
     ; Store two pixels (8 bytes) of ymmA to the output when it has enough
     ; space.
-    cmp         rcx, byte SIZEOF_YMMWORD/16
+    cmp         ecx, byte SIZEOF_YMMWORD/16
     jb          short .column_st7
     vmovq       MMWORD [rdi], xmmA
     add         rdi, byte SIZEOF_YMMWORD/16*4
-    sub         rcx, byte SIZEOF_YMMWORD/16
+    sub         ecx, byte SIZEOF_YMMWORD/16
     vpsrldq     xmmA, SIZEOF_YMMWORD/16*4
 .column_st7:
     ; Store one pixel (4 bytes) of ymmA to the output when it has enough
     ; space.
-    test        rcx, rcx
+    test        ecx, ecx
     jz          short .endcolumn
     vmovd       XMM_DWORD [rdi], xmmA
 
