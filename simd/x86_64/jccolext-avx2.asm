@@ -57,12 +57,13 @@ EXTN(jsimd_rgb_ycc_convert_avx2):
     jz          near .return
 
 
-    mov         rdi, JSAMPARRAY [r12+0*SIZEOF_JSAMPARRAY]
-    mov         rbx, JSAMPARRAY [r12+1*SIZEOF_JSAMPARRAY]
-    mov         rdx, JSAMPARRAY [r12+2*SIZEOF_JSAMPARRAY]
-    lea         rdi, [rdi+r13*SIZEOF_JSAMPROW]
-    lea         rbx, [rbx+r13*SIZEOF_JSAMPROW]
-    lea         rdx, [rdx+r13*SIZEOF_JSAMPROW]
+    shl		r13, 3 ; r13*SIZEOF_JSAMPROW	
+    mov		rdi, r13
+    mov		rbx, r13
+    mov		rdx, r13
+    add         rdi, JSAMPARRAY [r12+0*SIZEOF_JSAMPARRAY]
+    add         rbx, JSAMPARRAY [r12+1*SIZEOF_JSAMPARRAY]
+    add         rdx, JSAMPARRAY [r12+2*SIZEOF_JSAMPARRAY]
 
 ;	load constants
    lea	 	rax, [rel PW_F0299_F0337]
@@ -86,15 +87,14 @@ align 16
     push        rdx
     push        rbx
     push        rdi
-    push        rsi
     mov         ecx, r10d               ; col
 
-    mov         rsi, JSAMPROW [rsi]     ; inptr
+    mov         rsi, JSAMPROW [r11]     ; inptr
     mov         rdi, JSAMPROW [rdi]     ; outptr0
     mov         rbx, JSAMPROW [rbx]     ; outptr1
     mov         rdx, JSAMPROW [rdx]     ; outptr2
 
-    cmp         rcx, byte SIZEOF_YMMWORD
+    cmp         ecx, byte SIZEOF_YMMWORD
     jae         near .columnloop
 
 %if RGB_PIXELSIZE == 3  ; ---------------
@@ -369,8 +369,6 @@ align 16
     vpmaddwd    ymm8, ymm8, ymm15  ; ymm8=ROL*FIX(0.299)+GOL*FIX(0.337)
     vpmaddwd    ymm9, ymm6, ymm15  ; ymm9=ROH*FIX(0.299)+GOH*FIX(0.337)
 
-;    vmovdqa     YMMWORD [wk(4)], ymm8   ; wk(4)=ROL*FIX(0.299)+GOL*FIX(0.337)
-;    vmovdqa     YMMWORD [wk(5)], ymm9   ; wk(5)=ROH*FIX(0.299)+GOH*FIX(0.337)
 
     vpxor       xmm6, xmm6, xmm6
     vpunpcklwd  ymm1, ymm6, ymm5        ; ymm1=BOL
@@ -504,12 +502,11 @@ align 16
     test        ecx, ecx
     jnz         near .column_ld1
 
-    pop         rsi
     pop         rdi
     pop         rbx
     pop         rdx
 
-    add         rsi, byte SIZEOF_JSAMPROW  ; input_buf
+    add         r11, byte SIZEOF_JSAMPROW  ; input_buf
     add         rdi, byte SIZEOF_JSAMPROW
     add         rbx, byte SIZEOF_JSAMPROW
     add         rdx, byte SIZEOF_JSAMPROW

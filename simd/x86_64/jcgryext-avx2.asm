@@ -114,13 +114,13 @@ align 16
     jz          short .column_ld16
     sub         ecx, byte SIZEOF_MMWORD
     vpslldq     xmmA, xmmA, SIZEOF_MMWORD
-    vpinsrq    xmmA, xmmA, [rsi+rcx], 0x0
+    vpinsrq     xmmA, xmmA, [rsi+rcx], 0x0
 .column_ld16:
     test        cl, SIZEOF_XMMWORD
     jz          short .column_ld32
     sub         ecx, byte SIZEOF_XMMWORD
     vmovdqu     xmmB, XMM_MMWORD [rsi+rcx]
-    vinserti128  ymmA, ymmB, xmmA, 1
+    vinserti128 ymmA, ymmB, xmmA, 1
 .column_ld32:
     test        cl, SIZEOF_YMMWORD
     jz          short .column_ld64
@@ -233,10 +233,8 @@ align 16
     test        cl, SIZEOF_XMMWORD/4
     jz          short .column_ld8
     sub         ecx, byte SIZEOF_XMMWORD/4
-    vmovdqa     xmmF, xmmA
-    vperm2i128  ymmF, ymmF, ymmF, 1
-    vmovdqu     xmmA, XMMWORD [rsi+rcx*RGB_PIXELSIZE]
-    vpor        ymmA, ymmA, ymmF
+    vmovdqu     xmmF, XMMWORD [rsi+rcx*RGB_PIXELSIZE]
+    vinserti128 ymmA, ymmF, xmmA, 0x1
 .column_ld8:
     test        cl, SIZEOF_XMMWORD/2
     jz          short .column_ld16
