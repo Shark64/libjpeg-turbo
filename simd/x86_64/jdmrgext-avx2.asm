@@ -250,23 +250,19 @@ align 16
     vpunpcklqdq ymmC, ymmF, ymmC        ; ymmC=(2A 0B 1B 2B 0C 1C 2C 0D 1D 2D 0E 1E 2E 0F 1F 2F
                                         ;       2Q 0R 1R 2R 0S 1S 2S 0T 1T 2T 0U 1U 2U 0V 1V 2V)
 
-    vperm2i128  ymmA, ymmH, ymmG, 0x20  ; ymmA=(00 10 20 01 11 21 02 12 22 03 13 23 04 14 24 05
+    vperm2i128  ymmG, ymmG, ymmG, 0x01  ; ymmG=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
+					;       15 25 06 16 26 07 17 27 08 18 28 09 19 29 0A 1A)
+
+    vpblendd    ymmA, ymmH, ymmG, 0xF0  ; ymmA=(00 10 20 01 11 21 02 12 22 03 13 23 04 14 24 05
                                         ;       15 25 06 16 26 07 17 27 08 18 28 09 19 29 0A 1A)
-    vperm2i128  ymmD, ymmC, ymmH, 0x30  ; ymmD=(2A 0B 1B 2B 0C 1C 2C 0D 1D 2D 0E 1E 2E 0F 1F 2F
+    vpblendd    ymmD, ymmC, ymmH, 0xF0  ; ymmD=(2A 0B 1B 2B 0C 1C 2C 0D 1D 2D 0E 1E 2E 0F 1F 2F
                                         ;       0G 1G 2G 0H 1H 2H 0I 1I 2I 0J 1J 2J 0K 1K 2K 0L)
-    vperm2i128  ymmF, ymmG, ymmC, 0x31  ; ymmF=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
+    vpblendd    ymmF, ymmG, ymmC, 0xF0  ; ymmF=(1L 2L 0M 1M 2M 0N 1N 2N 0O 1O 2O 0P 1P 2P 0Q 1Q
                                         ;       2Q 0R 1R 2R 0S 1S 2S 0T 1T 2T 0U 1U 2U 0V 1V 2V)
 
     cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
 
-    test        rdi, SIZEOF_YMMWORD-1
-    jnz         short .out1
-    ; --(aligned)-------------------
-    vmovntdq    YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
-    vmovntdq    YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
-    vmovntdq    YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmF
-    jmp         short .out0
 .out1:  ; --(unaligned)-----------------
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
@@ -274,7 +270,7 @@ align 16
 .out0:
     add         rdi, byte RGB_PIXELSIZE*SIZEOF_YMMWORD  ; outptr
     sub         ecx, byte SIZEOF_YMMWORD
-    jz          near .endcolumn
+    jz          near .return
 
     add         rsi, byte SIZEOF_YMMWORD  ; inptr0
     sub         eax, 1                    ; Yctr
@@ -307,7 +303,7 @@ align 16
     jb          short .column_st15
     vmovdqu     XMMWORD [rdi+0*SIZEOF_XMMWORD], xmmA
     add         rdi, byte SIZEOF_XMMWORD    ; outptr
-    vperm2i128  ymmA, ymmA, ymmA, 1
+    vextracti128 xmmA, ymmA, 1
     sub         ecx, byte SIZEOF_XMMWORD
 .column_st15:
     ; Store the lower 8 bytes of xmmA to the output when it has enough
@@ -341,7 +337,7 @@ align 16
     ; Store the lower 1 byte of rax to the output when it has enough
     ; space.
     test        ecx, ecx
-    jz          short .endcolumn
+    jz          short .return
     mov         BYTE [rdi], al
 
 %else  ; RGB_PIXELSIZE == 4 ; -----------
@@ -400,15 +396,6 @@ align 16
 
     cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
-
-    test        rdi, SIZEOF_YMMWORD-1
-    jnz         short .out1
-    ; --(aligned)-------------------
-    vmovntdq    YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
-    vmovntdq    YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
-    vmovntdq    YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmC
-    vmovntdq    YMMWORD [rdi+3*SIZEOF_YMMWORD], ymmH
-    jmp         short .out0
 .out1:  ; --(unaligned)-----------------
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
@@ -417,7 +404,7 @@ align 16
 .out0:
     add         rdi, RGB_PIXELSIZE*SIZEOF_YMMWORD  ; outptr
     sub         ecx, byte SIZEOF_YMMWORD
-    jz          near .endcolumn
+    jz          near .return
 
     add         rsi, byte SIZEOF_YMMWORD  ; inptr0
     sub         eax, 1
@@ -448,8 +435,9 @@ align 16
     jb          short .column_st15
     vmovdqu     XMMWORD [rdi+0*SIZEOF_XMMWORD], xmmA
     add         rdi, byte SIZEOF_XMMWORD    ; outptr
-    vperm2i128  ymmA, ymmA, ymmA, 1
+    vextracti128 xmmA, ymmA, 1
     sub         ecx, byte SIZEOF_YMMWORD/8
+    nop		; alignment
 .column_st15:
     ; Store two pixels (8 bytes) of ymmA to the output when it has enough
     ; space.
@@ -463,13 +451,11 @@ align 16
     ; Store one pixel (4 bytes) of ymmA to the output when it has enough
     ; space.
     test        ecx, ecx
-    jz          short .endcolumn
+    jz          short .return
     vmovd       XMM_DWORD [rdi], xmmA
 
 %endif  ; RGB_PIXELSIZE ; ---------------
 
-.endcolumn:
-    sfence                              ; flush the write buffer
 
 .return:
     pop         rbx
