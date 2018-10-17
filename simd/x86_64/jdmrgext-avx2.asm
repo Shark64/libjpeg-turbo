@@ -122,13 +122,11 @@ align 16
 
     vpaddw      ymm6, ymm6, ymm5
     vpaddw      ymm4, ymm4, ymm2
-    vpaddw      ymm6, ymm6, ymm5             ; ymm6=(CbH * FIX(1.77200))=(B-Y)H
+    vpaddw      ymm13,ymm6, ymm5             ; ymm13=(CbH * FIX(1.77200))=(B-Y)H
     vpaddw      ymm4, ymm4, ymm2             ; ymm4=(CbL * FIX(1.77200))=(B-Y)L
-    vpaddw      ymm7, ymm7, ymm1             ; ymm7=(CrH * FIX(1.40200))=(R-Y)H
+    vpaddw      ymm14,ymm7, ymm1             ; ymm14=(CrH * FIX(1.40200))=(R-Y)H
     vpaddw      ymm0, ymm0, ymm3             ; ymm0=(CrL * FIX(1.40200))=(R-Y)L
 
-    vmovdqa     ymm13, ymm6        ; wk(0)=(B-Y)H
-    vmovdqa     ymm14, ymm7        ; wk(1)=(R-Y)H
 
     vpunpckhwd  ymm6, ymm5, ymm1
     vpunpcklwd  ymm5, ymm5, ymm1
@@ -150,19 +148,20 @@ align 16
 
     vpackssdw   ymm5, ymm5, ymm6        ; ymm5=CbH*-FIX(0.344)+CrH*FIX(0.285)
     vpackssdw   ymm2, ymm2, ymm7        ; ymm2=CbL*-FIX(0.344)+CrL*FIX(0.285)
-    vpsubw      ymm5, ymm5, ymm1        ; ymm5=CbH*-FIX(0.344)+CrH*-FIX(0.714)=(G-Y)H
+    vpsubw      ymm15,ymm5, ymm1        ; ymm5=CbH*-FIX(0.344)+CrH*-FIX(0.714)=(G-Y)H
     vpsubw      ymm2, ymm2, ymm3        ; ymm2=CbL*-FIX(0.344)+CrL*-FIX(0.714)=(G-Y)L
 
-    vmovdqa     ymm15, ymm5   ; wk(2)=(G-Y)H
 
     mov         eax, 2                   ; Yctr
     jmp         short .Yloop_1st
 
+align 16
 .Yloop_2nd:
     vmovdqa     ymm0, ymm14 ; ymm0=(R-Y)H
     vmovdqa     ymm2, ymm15 ; ymm2=(G-Y)H
     vmovdqa     ymm4, ymm13 ; ymm4=(B-Y)H
 
+align 16
 .Yloop_1st:
     vmovdqu     ymm7, YMMWORD [rsi]     ; ymm7=Y(0123456789ABCDEFGHIJKLMNOPQRSTUV)
 
@@ -171,22 +170,18 @@ align 16
     vpand       ymm6, ymm6, ymm7        ; ymm6=Y(02468ACEGIKMOQSU)=YE
     vpsrlw      ymm7, ymm7, BYTE_BIT    ; ymm7=Y(13579BDFHJLNPRTV)=YO
 
-    vmovdqa     ymm1, ymm0              ; ymm1=ymm0=(R-Y)(L/H)
-    vmovdqa     ymm3, ymm2              ; ymm3=ymm2=(G-Y)(L/H)
-    vmovdqa     ymm5, ymm4              ; ymm5=ymm4=(B-Y)(L/H)
-
+    vpaddw      ymm1, ymm0, ymm7        ; ymm1=((R-Y)+YO)=RO=R(13579BDFHJLNPRTV)
     vpaddw      ymm0, ymm0, ymm6        ; ymm0=((R-Y)+YE)=RE=R(02468ACEGIKMOQSU)
-    vpaddw      ymm1, ymm1, ymm7        ; ymm1=((R-Y)+YO)=RO=R(13579BDFHJLNPRTV)
     vpackuswb   ymm0, ymm0, ymm0        ; ymm0=R(02468ACE********GIKMOQSU********)
     vpackuswb   ymm1, ymm1, ymm1        ; ymm1=R(13579BDF********HJLNPRTV********)
 
+    vpaddw      ymm3, ymm2, ymm7        ; ymm3=((G-Y)+YO)=GO=G(13579BDFHJLNPRTV)
     vpaddw      ymm2, ymm2, ymm6        ; ymm2=((G-Y)+YE)=GE=G(02468ACEGIKMOQSU)
-    vpaddw      ymm3, ymm3, ymm7        ; ymm3=((G-Y)+YO)=GO=G(13579BDFHJLNPRTV)
     vpackuswb   ymm2, ymm2, ymm2        ; ymm2=G(02468ACE********GIKMOQSU********)
     vpackuswb   ymm3, ymm3, ymm3        ; ymm3=G(13579BDF********HJLNPRTV********)
 
+    vpaddw      ymm5, ymm4, ymm7        ; ymm5=((B-Y)+YO)=BO=B(13579BDFHJLNPRTV)
     vpaddw      ymm4, ymm4, ymm6        ; ymm4=((B-Y)+YE)=BE=B(02468ACEGIKMOQSU)
-    vpaddw      ymm5, ymm5, ymm7        ; ymm5=((B-Y)+YO)=BO=B(13579BDFHJLNPRTV)
     vpackuswb   ymm4, ymm4, ymm4        ; ymm4=B(02468ACE********GIKMOQSU********)
     vpackuswb   ymm5, ymm5, ymm5        ; ymm5=B(13579BDF********HJLNPRTV********)
 
