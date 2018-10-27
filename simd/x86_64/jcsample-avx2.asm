@@ -18,6 +18,8 @@
 ; [TAB8]
 
 %include "jsimdext.inc"
+%use smartalign
+ALIGNMODE P6
 
 ; --------------------------------------------------------------------------
     SECTION     SEG_TEXT
@@ -50,94 +52,61 @@ EXTN(jsimd_h2v1_downsample_avx2):
     mov         rbp, rsp
     collect_args 6
 
-    mov         ecx, r13d
-    shl         rcx, 3                  ; imul rcx,DCTSIZE (rcx = output_cols)
+    shl         r13, 3                  ; imul r13,DCTSIZE (r13 = output_cols)
     jz          near .return
 
-    mov         edx, r10d
 
     ; -- expand_right_edge
 
-    push        rcx
+    mov         rcx, r13
     shl         rcx, 1                  ; output_cols * 2
-    sub         rcx, rdx
+    sub         rcx, r10
     jle         short .expand_end
 
-    mov         rax, r11
-    test        rax, rax
+    test        r11, r11
     jle         short .expand_end
 
     cld
     mov         rsi, r14                ; input_data
 .expandloop:
-    push        rax
-    push        rcx
+    mov         rdx, rcx
 
     mov         rdi, JSAMPROW [rsi]
-    add         rdi, rdx
-    mov         al, JSAMPLE [rdi-1]
+    add         rdi, r10
+    movzx       eax, JSAMPLE [rdi-1]
 
     rep stosb
 
-    pop         rcx
-    pop         rax
+    mov         rcx, rdx
 
     add         rsi, byte SIZEOF_JSAMPROW
-    dec         rax
+    sub         r11, 1
     jg          short .expandloop
 
+align 16
 .expand_end:
-    pop         rcx                     ; output_cols
 
     ; -- h2v1_downsample
 
     mov         eax, r12d               ; rowctr
-    test        eax, eax
+    test        r12d, r12d
     jle         near .return
 
-    mov         rdx, 0x00010000         ; bias pattern
-    vmovd       xmm7, edx
-    vpshufd     xmm7, xmm7, 0x00        ; xmm7={0, 1, 0, 1, 0, 1, 0, 1}
-    vperm2i128  ymm7, ymm7, ymm7, 0     ; ymm7={xmm7, xmm7}
-    vpcmpeqw    ymm6, ymm6, ymm6
-    vpsrlw      ymm6, ymm6, BYTE_BIT    ; ymm6={0xFF 0x00 0xFF 0x00 ..}
+    mov          edx, 0x00010000        ; bias pattern
+    vmovd        xmm7, edx
+    vpbroadcastd ymm7, xmm7             ; xmm7={0, 1, 0, 1, 0, 1, 0, 1}
+    vpcmpeqw     ymm6, ymm6, ymm6
+    vpsrlw       ymm6, ymm6, BYTE_BIT   ; ymm6={0xFF 0x00 0xFF 0x00 ..}
 
-    mov         rsi, r14                ; input_data
-    mov         rdi, r15                ; output_data
+align 16
 .rowloop:
-    push        rcx
-    push        rdi
-    push        rsi
-
-    mov         rsi, JSAMPROW [rsi]     ; inptr
-    mov         rdi, JSAMPROW [rdi]     ; outptr
+    mov         rcx, r13                ; output_cols
+    mov         rsi, JSAMPROW [r14]     ; inptr
+    mov         rdi, JSAMPROW [r15]     ; outptr
 
     cmp         rcx, byte SIZEOF_YMMWORD
-    jae         short .columnloop
-
-.columnloop_r24:
-    ; rcx can possibly be 8, 16, 24
-    cmp         rcx, 24
-    jne         .columnloop_r16
-    vmovdqu     ymm0, YMMWORD [rsi+0*SIZEOF_YMMWORD]
-    vmovdqu     xmm1, XMMWORD [rsi+1*SIZEOF_YMMWORD]
-    mov         rcx, SIZEOF_YMMWORD
-    jmp         short .downsample
-
-.columnloop_r16:
-    cmp         rcx, 16
-    jne         .columnloop_r8
-    vmovdqu     ymm0, YMMWORD [rsi+0*SIZEOF_YMMWORD]
-    vpxor       ymm1, ymm1, ymm1
-    mov         rcx, SIZEOF_YMMWORD
-    jmp         short .downsample
-
-.columnloop_r8:
-    vmovdqu     xmm0, XMMWORD[rsi+0*SIZEOF_YMMWORD]
-    vpxor       ymm1, ymm1, ymm1
-    mov         rcx, SIZEOF_YMMWORD
-    jmp         short .downsample
-
+    jb          .columnloop_r24
+align 16
 .columnloop:
     vmovdqu     ymm0, YMMWORD [rsi+0*SIZEOF_YMMWORD]
     vmovdqu     ymm1, YMMWORD [rsi+1*SIZEOF_YMMWORD]
@@ -164,24 +133,45 @@ EXTN(jsimd_h2v1_downsample_avx2):
     add         rsi, byte 2*SIZEOF_YMMWORD  ; inptr
     add         rdi, byte 1*SIZEOF_YMMWORD  ; outptr
     cmp         rcx, byte SIZEOF_YMMWORD
-    jae         short .columnloop
-    test        rcx, rcx
-    jnz         near .columnloop_r24
+    jae         .columnloop
+    test        ecx, ecx
+    jnz         .columnloop_r24
 
-    pop         rsi
-    pop         rdi
-    pop         rcx
 
-    add         rsi, byte SIZEOF_JSAMPROW  ; input_data
-    add         rdi, byte SIZEOF_JSAMPROW  ; output_data
-    dec         rax                        ; rowctr
-    jg          near .rowloop
+    add         r14, byte SIZEOF_JSAMPROW  ; input_data
+    add         r15, byte SIZEOF_JSAMPROW  ; output_data
+    sub         eax, 1                     ; rowctr
+    jg          .rowloop
 
 .return:
     vzeroupper
     uncollect_args 6
     pop         rbp
     ret
+
+.columnloop_r24:
+    ; rcx can possibly be 8, 16, 24
+    cmp         ecx, 24
+    jne         .columnloop_r16
+    vmovdqu     ymm0, YMMWORD [rsi+0*SIZEOF_YMMWORD]
+    vmovdqu     xmm1, XMMWORD [rsi+1*SIZEOF_YMMWORD]
+    mov         ecx, SIZEOF_YMMWORD
+    jmp         .downsample
+
+.columnloop_r16:
+    cmp         ecx, 16
+    jne         .columnloop_r8
+    vmovdqu     ymm0, YMMWORD [rsi+0*SIZEOF_YMMWORD]
+    vpxor       xmm1, xmm1, xmm1
+    mov         ecx, SIZEOF_YMMWORD
+    jmp         .downsample
+
+.columnloop_r8:
+    vmovdqu     xmm0, XMMWORD[rsi+0*SIZEOF_YMMWORD]
+    vpxor       xmm1, xmm1, xmm1
+    mov         ecx, SIZEOF_YMMWORD
+    jmp         .downsample
+
 
 ; --------------------------------------------------------------------------
 ;
@@ -212,100 +202,62 @@ EXTN(jsimd_h2v2_downsample_avx2):
     mov         rbp, rsp
     collect_args 6
 
-    mov         ecx, r13d
-    shl         rcx, 3                  ; imul rcx,DCTSIZE (rcx = output_cols)
+    shl         r13, 3                  ; imul r13,DCTSIZE (r13 = output_cols)
     jz          near .return
 
-    mov         edx, r10d
 
     ; -- expand_right_edge
 
-    push        rcx
+    mov		rcx, r13
     shl         rcx, 1                  ; output_cols * 2
-    sub         rcx, rdx
+    sub         rcx, r10
     jle         short .expand_end
 
-    mov         rax, r11
-    test        rax, rax
+    test        r11, r11
     jle         short .expand_end
 
     cld
     mov         rsi, r14                ; input_data
 .expandloop:
-    push        rax
-    push        rcx
-
+    mov         rdx, rcx
     mov         rdi, JSAMPROW [rsi]
-    add         rdi, rdx
-    mov         al, JSAMPLE [rdi-1]
+    add         rdi, r10
+    movzx       eax, JSAMPLE [rdi-1]
 
     rep stosb
 
-    pop         rcx
-    pop         rax
+    mov         rcx, rdx
 
     add         rsi, byte SIZEOF_JSAMPROW
-    dec         rax
+    sub         r11, 1
     jg          short .expandloop
 
+align 16
 .expand_end:
-    pop         rcx                     ; output_cols
 
     ; -- h2v2_downsample
 
     mov         eax, r12d               ; rowctr
-    test        rax, rax
+    test        r12d,r12d
     jle         near .return
 
-    mov         rdx, 0x00020001         ; bias pattern
-    vmovd       xmm7, edx
-    vpcmpeqw    ymm6, ymm6, ymm6
-    vpshufd     xmm7, xmm7, 0x00        ; ymm7={1, 2, 1, 2, 1, 2, 1, 2}
-    vperm2i128  ymm7, ymm7, ymm7, 0
-    vpsrlw      ymm6, ymm6, BYTE_BIT    ; ymm6={0xFF 0x00 0xFF 0x00 ..}
+    mov          edx, 0x00020001         ; bias pattern
+    vmovd        xmm7, edx
+    vpcmpeqw     ymm6, ymm6, ymm6
+    vpbroadcastd ymm7, xmm7             ; ymm7={1, 2, 1, 2, 1, 2, 1, 2}
+    vpsrlw       ymm6, ymm6, BYTE_BIT   ; ymm6={0xFF 0x00 0xFF 0x00 ..}
 
-    mov         rsi, r14                ; input_data
-    mov         rdi, r15                ; output_data
+align 16
 .rowloop:
-    push        rcx
-    push        rdi
-    push        rsi
+    mov         rcx, r13                	       ; output_cols
+    mov         rdx, JSAMPROW [r14+0*SIZEOF_JSAMPROW]  ; inptr0
+    mov         rsi, JSAMPROW [r14+1*SIZEOF_JSAMPROW]  ; inptr1
+    mov         rdi, JSAMPROW [r15]                    ; outptr
 
-    mov         rdx, JSAMPROW [rsi+0*SIZEOF_JSAMPROW]  ; inptr0
-    mov         rsi, JSAMPROW [rsi+1*SIZEOF_JSAMPROW]  ; inptr1
-    mov         rdi, JSAMPROW [rdi]                    ; outptr
+    cmp         ecx, byte SIZEOF_YMMWORD
+    jb          near .columnloop_r24
 
-    cmp         rcx, byte SIZEOF_YMMWORD
-    jae         short .columnloop
-
-.columnloop_r24:
-    cmp         rcx, 24
-    jne         .columnloop_r16
-    vmovdqu     ymm0, YMMWORD [rdx+0*SIZEOF_YMMWORD]
-    vmovdqu     ymm1, YMMWORD [rsi+0*SIZEOF_YMMWORD]
-    vmovdqu     xmm2, XMMWORD [rdx+1*SIZEOF_YMMWORD]
-    vmovdqu     xmm3, XMMWORD [rsi+1*SIZEOF_YMMWORD]
-    mov         rcx, SIZEOF_YMMWORD
-    jmp         short .downsample
-
-.columnloop_r16:
-    cmp         rcx, 16
-    jne         .columnloop_r8
-    vmovdqu     ymm0, YMMWORD [rdx+0*SIZEOF_YMMWORD]
-    vmovdqu     ymm1, YMMWORD [rsi+0*SIZEOF_YMMWORD]
-    vpxor       ymm2, ymm2, ymm2
-    vpxor       ymm3, ymm3, ymm3
-    mov         rcx, SIZEOF_YMMWORD
-    jmp         short .downsample
-
-.columnloop_r8:
-    vmovdqu     xmm0, XMMWORD [rdx+0*SIZEOF_XMMWORD]
-    vmovdqu     xmm1, XMMWORD [rsi+0*SIZEOF_XMMWORD]
-    vpxor       ymm2, ymm2, ymm2
-    vpxor       ymm3, ymm3, ymm3
-    mov         rcx, SIZEOF_YMMWORD
-    jmp         short .downsample
-
+align 16
 .columnloop:
     vmovdqu     ymm0, YMMWORD [rdx+0*SIZEOF_YMMWORD]
     vmovdqu     ymm1, YMMWORD [rsi+0*SIZEOF_YMMWORD]
@@ -345,16 +297,13 @@ EXTN(jsimd_h2v2_downsample_avx2):
     add         rdi, byte 1*SIZEOF_YMMWORD  ; outptr
     cmp         rcx, byte SIZEOF_YMMWORD
     jae         near .columnloop
-    test        rcx, rcx
-    jnz         near .columnloop_r24
+    test        ecx, ecx
+    jnz         short .columnloop_r24
 
-    pop         rsi
-    pop         rdi
-    pop         rcx
 
-    add         rsi, byte 2*SIZEOF_JSAMPROW  ; input_data
-    add         rdi, byte 1*SIZEOF_JSAMPROW  ; output_data
-    dec         rax                          ; rowctr
+    add         r14, byte 2*SIZEOF_JSAMPROW  ; input_data
+    add         r15, byte 1*SIZEOF_JSAMPROW  ; output_data
+    sub         eax, 1                       ; rowctr
     jg          near .rowloop
 
 .return:
@@ -362,6 +311,36 @@ EXTN(jsimd_h2v2_downsample_avx2):
     uncollect_args 6
     pop         rbp
     ret
+
+align 16
+.columnloop_r24:
+    cmp         ecx, 24
+    jne         .columnloop_r16
+    vmovdqu     ymm0, YMMWORD [rdx+0*SIZEOF_YMMWORD]
+    vmovdqu     ymm1, YMMWORD [rsi+0*SIZEOF_YMMWORD]
+    vmovdqu     xmm2, XMMWORD [rdx+1*SIZEOF_YMMWORD]
+    vmovdqu     xmm3, XMMWORD [rsi+1*SIZEOF_YMMWORD]
+    mov         ecx, SIZEOF_YMMWORD
+    jmp         near .downsample
+
+.columnloop_r16:
+    cmp         ecx, 16
+    jne         .columnloop_r8
+    vmovdqu     ymm0, YMMWORD [rdx+0*SIZEOF_YMMWORD]
+    vmovdqu     ymm1, YMMWORD [rsi+0*SIZEOF_YMMWORD]
+    vpxor       xmm2, xmm2, xmm2
+    vpxor       xmm3, xmm3, xmm3
+    mov         ecx, SIZEOF_YMMWORD
+    jmp         near .downsample
+
+.columnloop_r8:
+    vmovdqu     xmm0, XMMWORD [rdx+0*SIZEOF_XMMWORD]
+    vmovdqu     xmm1, XMMWORD [rsi+0*SIZEOF_XMMWORD]
+    vpxor       xmm2, xmm2, xmm2
+    vpxor       xmm3, xmm3, xmm3
+    mov         ecx, SIZEOF_YMMWORD
+    jmp         near .downsample
+
 
 ; For some reason, the OS X linker does not honor the request to align the
 ; segment unless we do this.
