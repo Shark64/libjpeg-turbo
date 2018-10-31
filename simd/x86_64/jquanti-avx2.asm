@@ -39,9 +39,6 @@
     GLOBAL_FUNCTION(jsimd_convsamp_avx2)
 
 EXTN(jsimd_convsamp_avx2):
-    push        rbp
-    mov         rax, rsp
-    mov         rbp, rsp
     collect_args 3
 
     mov         eax, r11d
@@ -90,7 +87,6 @@ EXTN(jsimd_convsamp_avx2):
 
     vzeroupper
     uncollect_args 3
-    pop         rbp
     ret
 
 ; --------------------------------------------------------------------------
@@ -121,46 +117,43 @@ EXTN(jsimd_convsamp_avx2):
     GLOBAL_FUNCTION(jsimd_quantize_avx2)
 
 EXTN(jsimd_quantize_avx2):
-    push        rbp
-    mov         rax, rsp
-    mov         rbp, rsp
     collect_args 3
 
-    vmovdqu     ymm4, [YMMBLOCK(0,0,r12,SIZEOF_DCTELEM)]
-    vmovdqu     ymm5, [YMMBLOCK(2,0,r12,SIZEOF_DCTELEM)]
-    vmovdqu     ymm6, [YMMBLOCK(4,0,r12,SIZEOF_DCTELEM)]
-    vmovdqu     ymm7, [YMMBLOCK(6,0,r12,SIZEOF_DCTELEM)]
+    mov		rax, r12
+    vmovdqu     ymm4, [YMMBLOCK(0,0,rax,SIZEOF_DCTELEM)]
+    vmovdqu     ymm5, [YMMBLOCK(2,0,rax,SIZEOF_DCTELEM)]
+    vmovdqu     ymm6, [YMMBLOCK(4,0,rax,SIZEOF_DCTELEM)]
+    vmovdqu     ymm7, [YMMBLOCK(6,0,rax,SIZEOF_DCTELEM)]
+    mov		rax, r11
+    add		rax, 0x7f
     vpabsw      ymm0, ymm4
+    vpaddw      ymm0, YMMWORD [rax+0x1]  ; correction + roundfactor
     vpabsw      ymm1, ymm5
+    vpaddw      ymm1, YMMWORD [rax+0x21]
     vpabsw      ymm2, ymm6
+    vpaddw      ymm2, YMMWORD [rax+0x41]
     vpabsw      ymm3, ymm7
-
-    vpaddw      ymm0, YMMWORD [CORRECTION(0,0,r11)]  ; correction + roundfactor
-    vpaddw      ymm1, YMMWORD [CORRECTION(2,0,r11)]
-    vpaddw      ymm2, YMMWORD [CORRECTION(4,0,r11)]
-    vpaddw      ymm3, YMMWORD [CORRECTION(6,0,r11)]
+    vpaddw      ymm3, YMMWORD [rax+0x61]
+    add		rax,  0x7f
     vpmulhuw    ymm0, YMMWORD [RECIPROCAL(0,0,r11)]  ; reciprocal
-    vpmulhuw    ymm1, YMMWORD [RECIPROCAL(2,0,r11)]
-    vpmulhuw    ymm2, YMMWORD [RECIPROCAL(4,0,r11)]
-    vpmulhuw    ymm3, YMMWORD [RECIPROCAL(6,0,r11)]
-    vpmulhuw    ymm0, YMMWORD [SCALE(0,0,r11)]       ; scale
-    vpmulhuw    ymm1, YMMWORD [SCALE(2,0,r11)]
-    vpmulhuw    ymm2, YMMWORD [SCALE(4,0,r11)]
-    vpmulhuw    ymm3, YMMWORD [SCALE(6,0,r11)]
-
+    vpmulhuw    ymm0, [rax+0x02]       ; scale
     vpsignw     ymm0, ymm0, ymm4
-    vpsignw     ymm1, ymm1, ymm5
-    vpsignw     ymm2, ymm2, ymm6
-    vpsignw     ymm3, ymm3, ymm7
-
     vmovdqu     [YMMBLOCK(0,0,r10,SIZEOF_DCTELEM)], ymm0
+    vpmulhuw    ymm1, YMMWORD [RECIPROCAL(2,0,r11)]
+    vpmulhuw    ymm1, [rax+0x22]
+    vpsignw     ymm1, ymm1, ymm5
     vmovdqu     [YMMBLOCK(2,0,r10,SIZEOF_DCTELEM)], ymm1
+    vpmulhuw    ymm2, YMMWORD [RECIPROCAL(4,0,r11)]
+    vpmulhuw    ymm2, [rax+0x42]
+    vpsignw     ymm2, ymm2, ymm6
     vmovdqu     [YMMBLOCK(4,0,r10,SIZEOF_DCTELEM)], ymm2
+    vpmulhuw    ymm3, YMMWORD [RECIPROCAL(6,0,r11)]
+    vpmulhuw    ymm3, [rax+0x62]
+    vpsignw     ymm3, ymm3, ymm7
     vmovdqu     [YMMBLOCK(6,0,r10,SIZEOF_DCTELEM)], ymm3
 
     vzeroupper
     uncollect_args 3
-    pop         rbp
     ret
 
 ; For some reason, the OS X linker does not honor the request to align the
