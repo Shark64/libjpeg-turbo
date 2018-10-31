@@ -37,36 +37,27 @@ ALIGNMODE P6
 ; r12d = JDIMENSION in_row_group_ctr
 ; r13 = JSAMPARRAY output_buf
 
-%define wk(i)   rbp - (WK_NUM - (i)) * SIZEOF_YMMWORD  ; ymmword wk[WK_NUM]
-%define WK_NUM  3
-
-    align       32
+    align       64
     GLOBAL_FUNCTION(jsimd_h2v1_merged_upsample_avx2)
 
 EXTN(jsimd_h2v1_merged_upsample_avx2):
-    push        rbp
-    mov         rax, rsp                     ; rax = original rbp
-    sub         rsp, byte 4
-    and         rsp, byte (-SIZEOF_YMMWORD)  ; align to 256 bits
-    mov         [rsp], rax
-    mov         rbp, rsp                     ; rbp = aligned rbp
-    lea         rsp, [wk(0)]
     collect_args 4
     push        rbx
 
-    mov         ecx, r10d               ; col
+    mov		rcx, r12
+    shl		rcx, 3					 ; ecx=SIZEOF_JASMPROW*8
     test        r10d, r10d
     jz          near .return
 
-
+    mov         rdi, JSAMPROW [r13]                      ; outptr
     mov         rsi, JSAMPARRAY [r11+0*SIZEOF_JSAMPARRAY]
     mov         rbx, JSAMPARRAY [r11+1*SIZEOF_JSAMPARRAY]
     mov         rdx, JSAMPARRAY [r11+2*SIZEOF_JSAMPARRAY]
-    mov         rsi, JSAMPROW [rsi+r12*SIZEOF_JSAMPROW]  ; inptr0
-    mov         rbx, JSAMPROW [rbx+r12*SIZEOF_JSAMPROW]  ; inptr1
-    mov         rdx, JSAMPROW [rdx+r12*SIZEOF_JSAMPROW]  ; inptr2
-    mov         rdi, JSAMPROW [r13]                      ; outptr
+    mov         rsi, JSAMPROW [rsi+rcx]  ; inptr0
+    mov         rbx, JSAMPROW [rbx+rcx]  ; inptr1
+    mov         rdx, JSAMPROW [rdx+rcx]  ; inptr2
     lea		rax, [rel PW_F0402]
+    mov         ecx, r10d               ; col
     vpbroadcastw ymm8, [rax]  ; PW_F0402
     vpbroadcastw ymm9, [rax+2]; PW_MF0228
     vpxor	 xmm0, xmm0, xmm0
@@ -153,16 +144,9 @@ align 16
 
 
     mov         eax, 2                   ; Yctr
-    jmp         short .Yloop_1st
 
 align 16
-.Yloop_2nd:
-    vmovdqa     ymm0, ymm14 ; ymm0=(R-Y)H
-    vmovdqa     ymm2, ymm15 ; ymm2=(G-Y)H
-    vmovdqa     ymm4, ymm13 ; ymm4=(B-Y)H
-
-align 16
-.Yloop_1st:
+.Yloop:
     vmovdqu     ymm7, YMMWORD [rsi]     ; ymm7=Y(0123456789ABCDEFGHIJKLMNOPQRSTUV)
 
     vpcmpeqw    ymm6, ymm6, ymm6
@@ -263,18 +247,19 @@ align 16
     cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
 
-.out1:  ; --(unaligned)-----------------
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
     vmovdqu     YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmF
-.out0:
     add         rdi, byte RGB_PIXELSIZE*SIZEOF_YMMWORD  ; outptr
     sub         ecx, byte SIZEOF_YMMWORD
     jz          near .return
 
+    vmovdqa     ymm0, ymm14 ; ymm0=(R-Y)H
+    vmovdqa     ymm2, ymm15 ; ymm2=(G-Y)H
+    vmovdqa     ymm4, ymm13 ; ymm4=(B-Y)H
     add         rsi, byte SIZEOF_YMMWORD  ; inptr0
     sub         eax, 1                    ; Yctr
-    jnz         near .Yloop_2nd
+    jnz         near .Yloop ;_2nd
 
     add         rbx, byte SIZEOF_YMMWORD  ; inptr1
     add         rdx, byte SIZEOF_YMMWORD  ; inptr2
@@ -396,19 +381,21 @@ align 16
 
     cmp         ecx, byte SIZEOF_YMMWORD
     jb          short .column_st64
-.out1:  ; --(unaligned)-----------------
+
     vmovdqu     YMMWORD [rdi+0*SIZEOF_YMMWORD], ymmA
     vmovdqu     YMMWORD [rdi+1*SIZEOF_YMMWORD], ymmD
     vmovdqu     YMMWORD [rdi+2*SIZEOF_YMMWORD], ymmC
     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymmH
-.out0:
     add         rdi, RGB_PIXELSIZE*SIZEOF_YMMWORD  ; outptr
     sub         ecx, byte SIZEOF_YMMWORD
     jz          near .return
 
+    vmovdqa     ymm0, ymm14 ; ymm0=(R-Y)H
+    vmovdqa     ymm2, ymm15 ; ymm2=(G-Y)H
+    vmovdqa     ymm4, ymm13 ; ymm4=(B-Y)H
     add         rsi, byte SIZEOF_YMMWORD  ; inptr0
     sub         eax, 1
-    jnz         near .Yloop_2nd
+    jnz         near .Yloop
 
     add         rbx, byte SIZEOF_YMMWORD  ; inptr1
     add         rdx, byte SIZEOF_YMMWORD  ; inptr2
@@ -461,9 +448,6 @@ align 16
     pop         rbx
     vzeroupper
     uncollect_args 4
-    mov         rsp, rbp                ; rsp <- aligned rbp
-    pop         rsp                     ; rsp <- original rbp
-    pop         rbp
     ret
 
 ; --------------------------------------------------------------------------
@@ -486,9 +470,6 @@ align 16
     GLOBAL_FUNCTION(jsimd_h2v2_merged_upsample_avx2)
 
 EXTN(jsimd_h2v2_merged_upsample_avx2):
-    push        rbp
-    mov         rax, rsp
-    mov         rbp, rsp
     collect_args 4
     push        rbx
 
@@ -567,7 +548,6 @@ EXTN(jsimd_h2v2_merged_upsample_avx2):
 
     pop         rbx
     uncollect_args 4
-    pop         rbp
     ret
 
 ; For some reason, the OS X linker does not honor the request to align the
