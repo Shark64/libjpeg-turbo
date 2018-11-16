@@ -36,20 +36,11 @@ ALIGNMODE P6
 ; r13d = JDIMENSION output_row
 ; r14d = int num_rows
 
-%define wk(i)   rbp - (WK_NUM - (i)) * SIZEOF_YMMWORD  ; ymmword wk[WK_NUM]
-%define WK_NUM  2
 
     align       32
     GLOBAL_FUNCTION(jsimd_rgb_gray_convert_avx2)
 
 EXTN(jsimd_rgb_gray_convert_avx2):
-    push        rbp
-    mov         rax, rsp                     ; rax = original rbp
-    sub         rsp, byte 4
-    and         rsp, byte (-SIZEOF_YMMWORD)  ; align to 256 bits
-    mov         [rsp], rax
-    mov         rbp, rsp                     ; rbp = aligned rbp
-    lea         rsp, [wk(0)]
     collect_args 5
     push        rbx
 
@@ -64,9 +55,8 @@ EXTN(jsimd_rgb_gray_convert_avx2):
     lea		rax, [rel PW_F0299_F0337]
     vpbroadcastd ymm15, [rax] ; PW_F0299_F0337
     vpbroadcastd ymm14, [rax+0x4]; PW_F0114_F0250
-    vpxor	xmm0, xmm0, xmm0
     vpcmpeqd	ymm1, ymm1, ymm1
-    vpsubd	ymm1, ymm0, ymm1 ; 1 DW
+    vpabsd	ymm1, ymm1 ; 1 DW
     vpslld	ymm13, ymm1, SCALEBITS -1 ; PD_ONEHALF
 
     mov         rsi, r11
@@ -87,22 +77,20 @@ EXTN(jsimd_rgb_gray_convert_avx2):
 
 align 16
 .column_ld1:
-    push        rax
     lea         ecx, [rcx+rcx*2]        ; imul ecx,RGB_PIXELSIZE
     test        cl, SIZEOF_BYTE
     jz          short .column_ld2
     sub         ecx, byte SIZEOF_BYTE
-    movzx       eax, BYTE [rsi+rcx]
+    movzx       ebx, BYTE [rsi+rcx]
 .column_ld2:
     test        cl, SIZEOF_WORD
     jz          short .column_ld4
     sub         ecx, byte SIZEOF_WORD
     movzx       edx, WORD [rsi+rcx]
-    shl         eax, WORD_BIT
-    or          eax, edx
+    shl         ebx, WORD_BIT
+    or          ebx, edx
 .column_ld4:
-    vmovd       xmmA, eax
-    pop         rax
+    vmovd       xmmA, ebx
     test        cl, SIZEOF_DWORD
     jz          short .column_ld8
     sub         ecx, byte SIZEOF_DWORD
@@ -128,8 +116,9 @@ align 16
     vmovdqa     ymmF, ymmA
     vmovdqu     ymmA, YMMWORD [rsi+0*SIZEOF_YMMWORD]
 .column_ld64:
-    test        cl, 2*SIZEOF_YMMWORD
+    movzx	ebx, cl
     mov         ecx, SIZEOF_YMMWORD
+    test        ebx, 2*SIZEOF_YMMWORD	; longer opcode for alignment
     jz          short .rgb_gray_cnv
     vmovdqa     ymmB, ymmA
     vmovdqu     ymmA, YMMWORD [rsi+0*SIZEOF_YMMWORD]
@@ -242,8 +231,9 @@ align 16
     vmovdqa     ymmF, ymmA
     vmovdqu     ymmA, YMMWORD [rsi+rcx*RGB_PIXELSIZE]
 .column_ld16:
-    test        cl, SIZEOF_XMMWORD
+    movzx	ebx, cl
     mov         ecx, SIZEOF_YMMWORD
+    test        ebx, SIZEOF_XMMWORD
     jz          short .rgb_gray_cnv
     vmovdqa     ymmE, ymmA
     vmovdqa     ymmH, ymmF
@@ -260,6 +250,7 @@ align 16
      vinserti128 ymmE, ymmE, XMMWORD [rsi+5*SIZEOF_XMMWORD], 0x1
      vmovdqu	 xmmH, XMMWORD [rsi+3*SIZEOF_XMMWORD]
      vinserti128 ymmH, ymmH, XMMWORD [rsi+7*SIZEOF_XMMWORD], 0x1
+align 16	; 1 byte nop
 .rgb_gray_cnv:
 
 	; ymmA=(00 10 20 30 01 11 21 31 02 12 22 32 03 13 23 33
@@ -360,8 +351,8 @@ align 16
     vpmaddwd    ymm4, ymm4, ymm14  ; ymm4=BEH*FIX(0.114)+GEH*FIX(0.250)
 
 
-    vpaddd      ymm6, ymm6, ymm8 ;YMMWORD [wk(0)]
-    vpaddd      ymm4, ymm4, ymm9 ;YMMWORD [wk(1)]
+    vpaddd      ymm6, ymm6, ymm8 
+    vpaddd      ymm4, ymm4, ymm9 
     vpaddd      ymm6, ymm6, ymm13
     vpaddd      ymm4, ymm4, ymm13
     vpsrld      ymm6, ymm6, SCALEBITS   ; ymm6=YEL
@@ -391,9 +382,6 @@ align 16
     pop         rbx
     vzeroupper
     uncollect_args 5
-    mov         rsp, rbp                ; rsp <- aligned rbp
-    pop         rsp                     ; rsp <- original rbp
-    pop         rbp
     ret
 
 ; For some reason, the OS X linker does not honor the request to align the
