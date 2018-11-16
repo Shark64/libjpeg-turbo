@@ -109,7 +109,9 @@ endif()
 
 include(cmakescripts/GNUInstallDirs.cmake)
 
-set(CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_FULL_LIBDIR})
+if(ENABLE_SHARED)
+  set(CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_FULL_LIBDIR})
+endif()
 
 macro(report_directory var)
   if(CMAKE_INSTALL_${var} STREQUAL CMAKE_INSTALL_FULL_${var})
@@ -468,8 +470,8 @@ if(UNIX AND NOT APPLE)
       # still work.
       file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/conftest.map
         "VERS_1 { global: foo;  local: *; }; VERS_2 { global: foo2; } VERS_1;")
-      set(CMAKE_REQUIRED_FLAGS "-Wl,-M,${CMAKE_CURRENT_BINARY_DIR}/conftest.map")
-      check_c_source_compiles("void foo() {} void foo2() {} int main(void) { return 0; }"
+      set(CMAKE_REQUIRED_FLAGS "-Wl,-M,${CMAKE_CURRENT_BINARY_DIR}/conftest.map -shared")
+      check_c_source_compiles("int foo() { return 0; } int foo2() { return 2; }"
         HAVE_MAPFILE)
       set(CMAKE_REQUIRED_FLAGS)
       file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/conftest.map)
