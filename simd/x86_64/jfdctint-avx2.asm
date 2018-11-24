@@ -123,12 +123,12 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     vpsubw      %6, %6, %7              ; %6=tmp0_1-tmp3_2=tmp13_12
 
     vperm2i128  %7, %1, %1, 0x01        ; %7=tmp11_10
-    vpsignw     %1, %1, [rel PW_1_NEG1]  ; %1=tmp10_neg11
+    vpsignw     %1, %1, ymm9  ; %1=tmp10_neg11
     vpaddw      %7, %7, %1              ; %7=(tmp10+tmp11)_(tmp10-tmp11)
 %if %9 == 1
     vpsllw      %1, %7, PASS1_BITS      ; %1=data0_4
 %else
-    vpaddw      %7, %7, [rel PW_DESCALE_P2X]
+    vpaddw      %7, %7, ymm10
     vpsraw      %1, %7, PASS1_BITS      ; %1=data0_4
 %endif
 
@@ -144,11 +144,11 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     vperm2i128  %7, %6, %6, 0x01        ; %7=tmp12_13
     vpunpcklwd  %2, %6, %7
     vpunpckhwd  %6, %6, %7
-    vpmaddwd    %2, %2, [rel PW_F130_F054_MF130_F054]  ; %2=data2_6L
-    vpmaddwd    %6, %6, [rel PW_F130_F054_MF130_F054]  ; %6=data2_6H
+    vpmaddwd    %2, %2, ymm15  ; %2=data2_6L
+    vpmaddwd    %6, %6, ymm15  ; %6=data2_6H
 
-    vpaddd      %2, %2, [rel PD_DESCALE_P %+ %9]
-    vpaddd      %6, %6, [rel PD_DESCALE_P %+ %9]
+    vpaddd      %2, %2, ymm1 %+ %9
+    vpaddd      %6, %6, ymm1 %+ %9
     vpsrad      %2, %2, DESCALE_P %+ %9
     vpsrad      %6, %6, DESCALE_P %+ %9
 
@@ -170,8 +170,8 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     vperm2i128  %2, %7, %7, 0x01        ; %2=z4_3
     vpunpcklwd  %6, %7, %2
     vpunpckhwd  %7, %7, %2
-    vpmaddwd    %6, %6, [rel PW_MF078_F117_F078_F117]  ; %6=z3_4L
-    vpmaddwd    %7, %7, [rel PW_MF078_F117_F078_F117]  ; %7=z3_4H
+    vpmaddwd    %6, %6, ymm14  ; %6=z3_4L
+    vpmaddwd    %7, %7, ymm14  ; %7=z3_4H
 
     ; (Original)
     ; z1 = tmp4 + tmp7;  z2 = tmp5 + tmp6;
@@ -192,14 +192,14 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     vperm2i128  %4, %5, %5, 0x01        ; %4=tmp7_6
     vpunpcklwd  %2, %8, %4
     vpunpckhwd  %4, %8, %4
-    vpmaddwd    %2, %2, [rel PW_MF060_MF089_MF050_MF256]  ; %2=tmp4_5L
-    vpmaddwd    %4, %4, [rel PW_MF060_MF089_MF050_MF256]  ; %4=tmp4_5H
+    vpmaddwd    %2, %2, ymm13  ; %2=tmp4_5L
+    vpmaddwd    %4, %4, ymm13  ; %4=tmp4_5H
 
     vpaddd      %2, %2, %6              ; %2=data7_5L
     vpaddd      %4, %4, %7              ; %4=data7_5H
 
-    vpaddd      %2, %2, [rel PD_DESCALE_P %+ %9]
-    vpaddd      %4, %4, [rel PD_DESCALE_P %+ %9]
+    vpaddd      %2, %2, ymm1 %+ %9
+    vpaddd      %4, %4, ymm1 %+ %9
     vpsrad      %2, %2, DESCALE_P %+ %9
     vpsrad      %4, %4, DESCALE_P %+ %9
 
@@ -208,14 +208,14 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     vperm2i128  %2, %8, %8, 0x01        ; %2=tmp5_4
     vpunpcklwd  %8, %5, %2
     vpunpckhwd  %5, %5, %2
-    vpmaddwd    %8, %8, [rel PW_F050_MF256_F060_MF089]  ; %8=tmp6_7L
-    vpmaddwd    %5, %5, [rel PW_F050_MF256_F060_MF089]  ; %5=tmp6_7H
+    vpmaddwd    %8, %8, ymm8  ; %8=tmp6_7L
+    vpmaddwd    %5, %5, ymm8  ; %5=tmp6_7H
 
     vpaddd      %8, %8, %6              ; %8=data3_1L
     vpaddd      %5, %5, %7              ; %5=data3_1H
 
-    vpaddd      %8, %8, [rel PD_DESCALE_P %+ %9]
-    vpaddd      %5, %5, [rel PD_DESCALE_P %+ %9]
+    vpaddd      %8, %8, ymm1 %+ %9
+    vpaddd      %5, %5, ymm1 %+ %9
     vpsrad      %8, %8, DESCALE_P %+ %9
     vpsrad      %5, %5, DESCALE_P %+ %9
 
@@ -225,7 +225,7 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
 ; --------------------------------------------------------------------------
     SECTION     SEG_CONST
 
-    alignz      32
+    alignz      64
     GLOBAL_DATA(jconst_fdct_islow_avx2)
 
 EXTN(jconst_fdct_islow_avx2):
@@ -238,13 +238,8 @@ PW_MF060_MF089_MF050_MF256 times 4  dw  (F_0_298 - F_0_899), -F_0_899
                            times 4  dw  (F_2_053 - F_2_562), -F_2_562
 PW_F050_MF256_F060_MF089   times 4  dw  (F_3_072 - F_2_562), -F_2_562
                            times 4  dw  (F_1_501 - F_0_899), -F_0_899
-PD_DESCALE_P1              times 8  dd  1 << (DESCALE_P1 - 1)
-PD_DESCALE_P2              times 8  dd  1 << (DESCALE_P2 - 1)
-PW_DESCALE_P2X             times 16 dw  1 << (PASS1_BITS - 1)
-PW_1_NEG1                  times 8  dw  1
-                           times 8  dw -1
 
-    alignz      32
+    alignz      64
 
 ; --------------------------------------------------------------------------
     SECTION     SEG_TEXT
@@ -262,26 +257,31 @@ PW_1_NEG1                  times 8  dw  1
     GLOBAL_FUNCTION(jsimd_fdct_islow_avx2)
 
 EXTN(jsimd_fdct_islow_avx2):
-    push        rbp
-    mov         rax, rsp
-    mov         rbp, rsp
     collect_args 1
+    lea		rax, [rel PW_F130_F054_MF130_F054]
+    vmovntdqa   ymm15, [rax] ; PW_F130_F054_MF130_F054
+    vmovntdqa	ymm14, [rax+0x20]; PW_MF078_F117_F078_F117
+    vmovntdqa	ymm13, [rax+0x40]; PW_MF060_MF089_MF050_MF256 
+    vmovntdqa	ymm8,  [rax+0x60]; PW_F050_MF256_F060_MF089
+    vpcmpeqd	ymm0, ymm0, ymm0 ; -1
+    vpabsd	ymm1, ymm0	; 1 PD
+    vpabsw	ymm2, ymm0	; 1 PW
+    vpslld	ymm11,ymm1, (DESCALE_P1 -1 )	
+    vpslld	ymm12,ymm1, (DESCALE_P2 -1 )	
+    vpsllw	ymm10,ymm2, (PASS1_BITS -1 )
+    vpblendd	ymm9, ymm0,ymm2, 0x0F ; PW_1_NEG1
+    mov		rax, r10
 
     ; ---- Pass 1: process rows.
-
-    vmovdqu     ymm4, YMMWORD [YMMBLOCK(0,0,r10,SIZEOF_DCTELEM)]
-    vmovdqu     ymm5, YMMWORD [YMMBLOCK(2,0,r10,SIZEOF_DCTELEM)]
-    vmovdqu     ymm6, YMMWORD [YMMBLOCK(4,0,r10,SIZEOF_DCTELEM)]
-    vmovdqu     ymm7, YMMWORD [YMMBLOCK(6,0,r10,SIZEOF_DCTELEM)]
-    ; ymm4=(00 01 02 03 04 05 06 07  10 11 12 13 14 15 16 17)
-    ; ymm5=(20 21 22 23 24 25 26 27  30 31 32 33 34 35 36 37)
-    ; ymm6=(40 41 42 43 44 45 46 47  50 51 52 53 54 55 56 57)
-    ; ymm7=(60 61 62 63 64 65 66 67  70 71 72 73 74 75 76 77)
-
-    vperm2i128  ymm0, ymm4, ymm6, 0x20
-    vperm2i128  ymm1, ymm4, ymm6, 0x31
-    vperm2i128  ymm2, ymm5, ymm7, 0x20
-    vperm2i128  ymm3, ymm5, ymm7, 0x31
+    vmovdqu	xmm0, [rax]
+    vinserti128 ymm0, ymm0, [rax+0x40], 0x1
+    vmovdqu	xmm1, [rax+0x10]
+    vinserti128 ymm1, ymm1, [rax+0x50], 0x1
+    vmovdqu	xmm2, [rax+0x20]
+    vinserti128 ymm2, ymm2, [rax+0x60], 0x1
+    vmovdqu	xmm3, [rax+0x30]
+    vinserti128 ymm3, ymm3, [rax+0x70], 0x1
+    
     ; ymm0=(00 01 02 03 04 05 06 07  40 41 42 43 44 45 46 47)
     ; ymm1=(10 11 12 13 14 15 16 17  50 51 52 53 54 55 56 57)
     ; ymm2=(20 21 22 23 24 25 26 27  60 61 62 63 64 65 66 67)
@@ -302,19 +302,18 @@ EXTN(jsimd_fdct_islow_avx2):
     dodct       ymm0, ymm1, ymm2, ymm4, ymm3, ymm5, ymm6, ymm7, 2
     ; ymm0=data0_4, ymm1=data3_1, ymm2=data2_6, ymm4=data7_5
 
-    vperm2i128 ymm3, ymm0, ymm1, 0x30   ; ymm3=data0_1
+    vpblendd   ymm3, ymm0, ymm1, 0xF0   ; ymm3=data0_1
     vperm2i128 ymm5, ymm2, ymm1, 0x20   ; ymm5=data2_3
     vperm2i128 ymm6, ymm0, ymm4, 0x31   ; ymm6=data4_5
     vperm2i128 ymm7, ymm2, ymm4, 0x21   ; ymm7=data6_7
 
-    vmovdqu     YMMWORD [YMMBLOCK(0,0,r10,SIZEOF_DCTELEM)], ymm3
-    vmovdqu     YMMWORD [YMMBLOCK(2,0,r10,SIZEOF_DCTELEM)], ymm5
-    vmovdqu     YMMWORD [YMMBLOCK(4,0,r10,SIZEOF_DCTELEM)], ymm6
-    vmovdqu     YMMWORD [YMMBLOCK(6,0,r10,SIZEOF_DCTELEM)], ymm7
+    vmovdqu     YMMWORD [YMMBLOCK(0,0,rax,SIZEOF_DCTELEM)], ymm3
+    vmovdqu     YMMWORD [YMMBLOCK(2,0,rax,SIZEOF_DCTELEM)], ymm5
+    vmovdqu     YMMWORD [YMMBLOCK(4,0,rax,SIZEOF_DCTELEM)], ymm6
+    vmovdqu     YMMWORD [YMMBLOCK(6,0,rax,SIZEOF_DCTELEM)], ymm7
 
     vzeroupper
     uncollect_args 1
-    pop         rbp
     ret
 
 ; For some reason, the OS X linker does not honor the request to align the
