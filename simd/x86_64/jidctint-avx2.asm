@@ -23,6 +23,8 @@
 
 %include "jsimdext.inc"
 %include "jdct.inc"
+%use smartalign
+ALIGNMODE P6
 
 ; --------------------------------------------------------------------------
 
@@ -117,10 +119,10 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
 ; --------------------------------------------------------------------------
 ; In-place 8x8x16-bit slow integer inverse DCT using AVX2 instructions
 ; %1-%4:  Input/output registers
-; %5-%12: Temp registers
-; %9:     Pass (1 or 2)
+; %5-%12,%14-15: Temp registers
+; %13:     Pass (1 or 2)
 
-%macro dodct 13
+%macro dodct 15
     ; -- Even part
 
     ; (Original)
@@ -132,14 +134,17 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     ; tmp2 = z2 * 0.541196100 + z3 * (0.541196100 - 1.847759065);
     ; tmp3 = z2 * (0.541196100 + 0.765366865) + z3 * 0.541196100;
 
+    vmovdqa	%12, [rel PW_F130_F054_MF130_F054]
+    vmovdqa	%11, [rel PW_1_NEG1]
+    vmovdqa	%15, [rel PD_DESCALE_P %+ %13]
     vperm2i128  %6, %3, %3, 0x01        ; %6=in6_2
     vpunpcklwd  %5, %3, %6              ; %5=in26_62L
     vpunpckhwd  %6, %3, %6              ; %6=in26_62H
-    vpmaddwd    %5, %5, [rel PW_F130_F054_MF130_F054]  ; %5=tmp3_2L
-    vpmaddwd    %6, %6, [rel PW_F130_F054_MF130_F054]  ; %6=tmp3_2H
+    vpmaddwd    %5, %5, %12  		; %5=tmp3_2L
+    vpmaddwd    %6, %6, %12	        ; %6=tmp3_2H
 
     vperm2i128  %7, %1, %1, 0x01        ; %7=in4_0
-    vpsignw     %1, %1, [rel PW_1_NEG1]
+    vpsignw     %1, %1, %11
     vpaddw      %7, %7, %1              ; %7=(in0+in4)_(in0-in4)
 
     vpxor       %1, %1, %1
@@ -166,11 +171,14 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     ; z3 = z3 * (1.175875602 - 1.961570560) + z4 * 1.175875602;
     ; z4 = z3 * 1.175875602 + z4 * (1.175875602 - 0.390180644);
 
+    vmovdqa	%3, [rel PW_MF078_F117_F078_F117]
+    vmovdqa	%6, [rel PW_MF060_MF089_MF050_MF256]
     vperm2i128  %8, %1, %1, 0x01        ; %8=z4_3
     vpunpcklwd  %7, %1, %8              ; %7=z34_43L
     vpunpckhwd  %8, %1, %8              ; %8=z34_43H
-    vpmaddwd    %7, %7, [rel PW_MF078_F117_F078_F117]  ; %7=z3_4L
-    vpmaddwd    %8, %8, [rel PW_MF078_F117_F078_F117]  ; %8=z3_4H
+    vpmaddwd    %7, %7, %3  ; %7=z3_4L
+    vpmaddwd    %8, %8, %3  ; %8=z3_4H
+    vmovdqa	%14, [rel PW_MF089_F060_MF256_F050]
 
     ; (Original)
     ; z1 = tmp0 + tmp3;  z2 = tmp1 + tmp2;
@@ -192,13 +200,13 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     vpunpcklwd  %3, %4, %2              ; %3=in71_53L
     vpunpckhwd  %4, %4, %2              ; %4=in71_53H
 
-    vpmaddwd    %5, %3, [rel PW_MF060_MF089_MF050_MF256]  ; %5=tmp0_1L
-    vpmaddwd    %6, %4, [rel PW_MF060_MF089_MF050_MF256]  ; %6=tmp0_1H
+    vpmaddwd    %5, %3, %6  		; %5=tmp0_1L
+    vpmaddwd    %6, %4, %6  		; %6=tmp0_1H
     vpaddd      %5, %5, %7              ; %5=tmp0_1L+z3_4L=tmp0_1L
     vpaddd      %6, %6, %8              ; %6=tmp0_1H+z3_4H=tmp0_1H
 
-    vpmaddwd    %3, %3, [rel PW_MF089_F060_MF256_F050]  ; %3=tmp3_2L
-    vpmaddwd    %4, %4, [rel PW_MF089_F060_MF256_F050]  ; %4=tmp3_2H
+    vpmaddwd    %3, %3, %14  ; %3=tmp3_2L
+    vpmaddwd    %4, %4, %14  ; %4=tmp3_2H
     vperm2i128  %7, %7, %7, 0x01        ; %7=z4_3L
     vperm2i128  %8, %8, %8, 0x01        ; %8=z4_3H
     vpaddd      %7, %3, %7              ; %7=tmp3_2L+z4_3L=tmp3_2L
@@ -208,32 +216,32 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
 
     vpaddd      %1, %9, %7              ; %1=tmp10_11L+tmp3_2L=data0_1L
     vpaddd      %2, %10, %8             ; %2=tmp10_11H+tmp3_2H=data0_1H
-    vpaddd      %1, %1, [rel PD_DESCALE_P %+ %13]
-    vpaddd      %2, %2, [rel PD_DESCALE_P %+ %13]
+    vpaddd      %1, %1, %15
+    vpaddd      %2, %2, %15
     vpsrad      %1, %1, DESCALE_P %+ %13
     vpsrad      %2, %2, DESCALE_P %+ %13
     vpackssdw   %1, %1, %2              ; %1=data0_1
 
     vpsubd      %3, %9, %7              ; %3=tmp10_11L-tmp3_2L=data7_6L
     vpsubd      %4, %10, %8             ; %4=tmp10_11H-tmp3_2H=data7_6H
-    vpaddd      %3, %3, [rel PD_DESCALE_P %+ %13]
-    vpaddd      %4, %4, [rel PD_DESCALE_P %+ %13]
+    vpaddd      %3, %3, %15
+    vpaddd      %4, %4, %15
     vpsrad      %3, %3, DESCALE_P %+ %13
     vpsrad      %4, %4, DESCALE_P %+ %13
     vpackssdw   %4, %3, %4              ; %4=data7_6
 
     vpaddd      %7, %11, %5             ; %7=tmp13_12L+tmp0_1L=data3_2L
     vpaddd      %8, %12, %6             ; %8=tmp13_12H+tmp0_1H=data3_2H
-    vpaddd      %7, %7, [rel PD_DESCALE_P %+ %13]
-    vpaddd      %8, %8, [rel PD_DESCALE_P %+ %13]
+    vpaddd      %7, %7, %15
+    vpaddd      %8, %8, %15
     vpsrad      %7, %7, DESCALE_P %+ %13
     vpsrad      %8, %8, DESCALE_P %+ %13
     vpackssdw   %2, %7, %8              ; %2=data3_2
 
     vpsubd      %7, %11, %5             ; %7=tmp13_12L-tmp0_1L=data4_5L
     vpsubd      %8, %12, %6             ; %8=tmp13_12H-tmp0_1H=data4_5H
-    vpaddd      %7, %7, [rel PD_DESCALE_P %+ %13]
-    vpaddd      %8, %8, [rel PD_DESCALE_P %+ %13]
+    vpaddd      %7, %7, %15
+    vpaddd      %8, %8, %15
     vpsrad      %7, %7, DESCALE_P %+ %13
     vpsrad      %8, %8, DESCALE_P %+ %13
     vpackssdw   %3, %7, %8              ; %3=data4_5
@@ -283,9 +291,6 @@ PW_1_NEG1                  times 8  dw  1
     GLOBAL_FUNCTION(jsimd_idct_islow_avx2)
 
 EXTN(jsimd_idct_islow_avx2):
-    push        rbp
-    mov         rax, rsp                     ; rax = original rbp
-    mov         rbp, rsp                     ; rbp = aligned rbp
     push_xmm    4
     collect_args 4
 
@@ -293,26 +298,20 @@ EXTN(jsimd_idct_islow_avx2):
 
 %ifndef NO_ZERO_COLUMN_TEST_ISLOW_AVX2
     mov         eax, DWORD [DWBLOCK(1,0,r11,SIZEOF_JCOEF)]
-    or          eax, DWORD [DWBLOCK(2,0,r11,SIZEOF_JCOEF)]
+    add         eax, DWORD [DWBLOCK(2,0,r11,SIZEOF_JCOEF)]
     jnz         near .columnDCT
 
-    movdqa      xmm0, XMMWORD [XMMBLOCK(1,0,r11,SIZEOF_JCOEF)]
-    movdqa      xmm1, XMMWORD [XMMBLOCK(2,0,r11,SIZEOF_JCOEF)]
-    vpor        xmm0, xmm0, XMMWORD [XMMBLOCK(3,0,r11,SIZEOF_JCOEF)]
-    vpor        xmm1, xmm1, XMMWORD [XMMBLOCK(4,0,r11,SIZEOF_JCOEF)]
-    vpor        xmm0, xmm0, XMMWORD [XMMBLOCK(5,0,r11,SIZEOF_JCOEF)]
-    vpor        xmm1, xmm1, XMMWORD [XMMBLOCK(6,0,r11,SIZEOF_JCOEF)]
-    vpor        xmm0, xmm0, XMMWORD [XMMBLOCK(7,0,r11,SIZEOF_JCOEF)]
-    vpor        xmm1, xmm1, xmm0
-    vpacksswb   xmm1, xmm1, xmm1
-    vpacksswb   xmm1, xmm1, xmm1
-    movd        eax, xmm1
-    test        rax, rax
+    vmovdqu     ymm0, YMMWORD [XMMBLOCK(1,0,r11,SIZEOF_JCOEF)]
+    vpor        ymm0, ymm0, YMMWORD [XMMBLOCK(3,0,r11,SIZEOF_JCOEF)]
+    vpor        ymm0, ymm0, YMMWORD [XMMBLOCK(5,0,r11,SIZEOF_JCOEF)]
+    vmovdqu     xmm1, XMMWORD [XMMBLOCK(7,0,r11,SIZEOF_JCOEF)]
+    vpor        ymm1, ymm1, ymm0
+    vptest	ymm1, ymm1
     jnz         short .columnDCT
 
     ; -- AC terms all zero
 
-    movdqa      xmm5, XMMWORD [XMMBLOCK(0,0,r11,SIZEOF_JCOEF)]
+    vmovdqa     xmm5, XMMWORD [XMMBLOCK(0,0,r11,SIZEOF_JCOEF)]
     vpmullw     xmm5, xmm5, XMMWORD [XMMBLOCK(0,0,r10,SIZEOF_ISLOW_MULT_TYPE)]
 
     vpsllw      xmm5, xmm5, PASS1_BITS
@@ -328,6 +327,7 @@ EXTN(jsimd_idct_islow_avx2):
 
     jmp         near .column_end
 %endif
+align 16
 .columnDCT:
 
     vmovdqu     ymm4, YMMWORD [YMMBLOCK(0,0,r11,SIZEOF_JCOEF)]  ; ymm4=in0_1
@@ -344,7 +344,7 @@ EXTN(jsimd_idct_islow_avx2):
     vperm2i128  ymm2, ymm5, ymm7, 0x20  ; ymm2=in2_6
     vperm2i128  ymm3, ymm7, ymm6, 0x31  ; ymm3=in7_5
 
-    dodct ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7, ymm8, ymm9, ymm10, ymm11, 1
+    dodct ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7, ymm8, ymm9, ymm10, ymm11, 1, ymm15, ymm14
     ; ymm0=data0_1, ymm1=data3_2, ymm2=data4_5, ymm3=data7_6
 
     dotranspose ymm0, ymm1, ymm2, ymm3, ymm4, ymm5, ymm6, ymm7
@@ -364,7 +364,7 @@ EXTN(jsimd_idct_islow_avx2):
     vperm2i128  ymm4, ymm3, ymm1, 0x31  ; ymm3=in7_5
     vperm2i128  ymm1, ymm3, ymm1, 0x20  ; ymm1=in3_1
 
-    dodct ymm0, ymm1, ymm2, ymm4, ymm3, ymm5, ymm6, ymm7, ymm8, ymm9, ymm10, ymm11, 2
+    dodct ymm0, ymm1, ymm2, ymm4, ymm3, ymm5, ymm6, ymm7, ymm8, ymm9, ymm10, ymm11, 2, ymm15, ymm14
     ; ymm0=data0_1, ymm1=data3_2, ymm2=data4_5, ymm4=data7_6
 
     dotranspose ymm0, ymm1, ymm2, ymm4, ymm3, ymm5, ymm6, ymm7
@@ -377,41 +377,40 @@ EXTN(jsimd_idct_islow_avx2):
 
     vextracti128 xmm6, ymm1, 1          ; xmm3=data67
     vextracti128 xmm4, ymm0, 1          ; xmm2=data45
-    vextracti128 xmm2, ymm1, 0          ; xmm1=data23
-    vextracti128 xmm0, ymm0, 0          ; xmm0=data01
+    vmovdqa	 xmm2, xmm1             ; xmm1=data23
+    				        ; xmm0=data01
 
     vpshufd     xmm1, xmm0, 0x4E  ; xmm1=(10 11 12 13 14 15 16 17 00 01 02 03 04 05 06 07)
     vpshufd     xmm3, xmm2, 0x4E  ; xmm3=(30 31 32 33 34 35 36 37 20 21 22 23 24 25 26 27)
     vpshufd     xmm5, xmm4, 0x4E  ; xmm5=(50 51 52 53 54 55 56 57 40 41 42 43 44 45 46 47)
     vpshufd     xmm7, xmm6, 0x4E  ; xmm7=(70 71 72 73 74 75 76 77 60 61 62 63 64 65 66 67)
 
-    vzeroupper
 
     mov         eax, r13d
 
     mov         rdx, JSAMPROW [r12+0*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
     mov         rsi, JSAMPROW [r12+1*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
-    movq        XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm0
-    movq        XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm1
+    vmovq       XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm0
+    vmovq       XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm1
 
     mov         rdx, JSAMPROW [r12+2*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
     mov         rsi, JSAMPROW [r12+3*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
-    movq        XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm2
-    movq        XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm3
+    vmovq       XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm2
+    vmovq       XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm3
 
     mov         rdx, JSAMPROW [r12+4*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
     mov         rsi, JSAMPROW [r12+5*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
-    movq        XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm4
-    movq        XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm5
+    vmovq       XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm4
+    vmovq       XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm5
 
     mov         rdx, JSAMPROW [r12+6*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
     mov         rsi, JSAMPROW [r12+7*SIZEOF_JSAMPROW]  ; (JSAMPLE *)
-    movq        XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm6
-    movq        XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm7
+    vmovq       XMM_MMWORD [rdx+rax*SIZEOF_JSAMPLE], xmm6
+    vmovq       XMM_MMWORD [rsi+rax*SIZEOF_JSAMPLE], xmm7
 
+    vzeroupper
     uncollect_args 4
     pop_xmm     4
-    pop         rbp
     ret
 
 ; For some reason, the OS X linker does not honor the request to align the
