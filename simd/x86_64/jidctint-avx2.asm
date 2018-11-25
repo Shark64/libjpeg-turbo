@@ -135,8 +135,9 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     ; tmp3 = z2 * (0.541196100 + 0.765366865) + z3 * 0.541196100;
 
     vmovdqa	%12, [rel PW_F130_F054_MF130_F054]
-    vmovdqa	%11, [rel PW_1_NEG1]
-    vmovdqa	%15, [rel PD_DESCALE_P %+ %13]
+    vpcmpeqd	%5, %5, %5		; NEG1
+    vpabsw	%6, %5			; PW_1
+    vpblendd	%11, %6, %5, 0xF0	
     vperm2i128  %6, %3, %3, 0x01        ; %6=in6_2
     vpunpcklwd  %5, %3, %6              ; %5=in26_62L
     vpunpckhwd  %6, %3, %6              ; %6=in26_62H
@@ -199,6 +200,9 @@ F_3_072 equ DESCALE(3299298341, 30 - CONST_BITS)  ; FIX(3.072711026)
     vperm2i128  %2, %2, %2, 0x01        ; %2=in1_3
     vpunpcklwd  %3, %4, %2              ; %3=in71_53L
     vpunpckhwd  %4, %4, %2              ; %4=in71_53H
+    vpcmpeqd	%15,%15,%15		; PD_MINUS_ONE
+    vpabsd	%15, %15
+    vpslld	%15, %15, (DESCALE_P %+ %13 -1) 
 
     vpmaddwd    %5, %3, %6  		; %5=tmp0_1L
     vpmaddwd    %6, %4, %6  		; %6=tmp0_1H
@@ -263,11 +267,6 @@ PW_MF060_MF089_MF050_MF256 times 4  dw  (F_0_298 - F_0_899), -F_0_899
                            times 4  dw  (F_2_053 - F_2_562), -F_2_562
 PW_MF089_F060_MF256_F050   times 4  dw -F_0_899, (F_1_501 - F_0_899)
                            times 4  dw -F_2_562, (F_3_072 - F_2_562)
-PD_DESCALE_P1              times 8  dd  1 << (DESCALE_P1 - 1)
-PD_DESCALE_P2              times 8  dd  1 << (DESCALE_P2 - 1)
-PB_CENTERJSAMP             times 32 db  CENTERJSAMPLE
-PW_1_NEG1                  times 8  dw  1
-                           times 8  dw -1
 
     alignz      32
 
@@ -287,7 +286,7 @@ PW_1_NEG1                  times 8  dw  1
 ; r12 = JSAMPARRAY output_buf
 ; r13d = JDIMENSION output_col
 
-    align       32
+    align       64
     GLOBAL_FUNCTION(jsimd_idct_islow_avx2)
 
 EXTN(jsimd_idct_islow_avx2):
@@ -370,10 +369,14 @@ align 16
     dotranspose ymm0, ymm1, ymm2, ymm4, ymm3, ymm5, ymm6, ymm7
     ; ymm0=data0_4, ymm1=data1_5, ymm2=data2_6, ymm4=data3_7
 
+    xor		eax, eax
+    mov		al, CENTERJSAMPLE
+    vmovd	xmm6, eax
+   vpbroadcastb ymm6, xmm6
     vpacksswb   ymm0, ymm0, ymm1        ; ymm0=data01_45
     vpacksswb   ymm1, ymm2, ymm4        ; ymm1=data23_67
-    vpaddb      ymm0, ymm0, [rel PB_CENTERJSAMP]
-    vpaddb      ymm1, ymm1, [rel PB_CENTERJSAMP]
+    vpaddb      ymm0, ymm0, ymm6
+    vpaddb      ymm1, ymm1, ymm6
 
     vextracti128 xmm6, ymm1, 1          ; xmm3=data67
     vextracti128 xmm4, ymm0, 1          ; xmm2=data45
