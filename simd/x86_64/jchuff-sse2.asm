@@ -21,6 +21,8 @@
 ; [TAB8]
 
 %include "jsimdext.inc"
+%use smartalign
+ALIGNMODE P6
 
 ; --------------------------------------------------------------------------
     SECTION     SEG_CONST
@@ -47,21 +49,19 @@ EXTN(jconst_huff_encode_one_block):
 
 %macro EMIT_BYTE 0
     sub         put_bits, 8             ; put_bits -= 8;
-    mov         rdx, put_buffer
-    mov         ecx, put_bits
-    shr         rdx, cl                 ; c = (JOCTET)GETJOCTET(put_buffer >> put_bits);
-    mov         byte [buffer], dl       ; *buffer++ = c;
+    shrx        rdx, put_buffer, put_bits_q                 ; c = (JOCTET)GETJOCTET(put_buffer >> put_bits);
+    movzx	ecx, dl
+    mov         [buffer], ecx       ; *buffer++ = c, zero extended in case we have to stuff a zero byte
+    lea		rcx, [buffer+2]
     add         buffer, 1
-    cmp         dl, 0xFF                ; need to stuff a zero byte?
-    jne         %%.EMIT_BYTE_END
-    mov         byte [buffer], 0        ; *buffer++ = 0;
-    add         buffer, 1
+    cmp         dl, 0xFF                ; need to stuff a zero byte? then do not increment the pointer
+    cmove	buffer, rcx
 %%.EMIT_BYTE_END:
 %endmacro
 
 %macro PUT_BITS 1
     add         put_bits, ecx           ; put_bits += size;
-    shl         put_buffer, cl          ; put_buffer = (put_buffer << size);
+    shlx        put_buffer, put_buffer, rcx          ; put_buffer = (put_buffer << size);
     or          put_buffer, %1
 %endmacro
 
@@ -89,75 +89,73 @@ EXTN(jconst_huff_encode_one_block):
 
 %macro EMIT_BITS 2
     CHECKBUF47
-    mov         ecx, %2
-    PUT_BITS    %1
+    add         put_bits_q, %2           ; put_bits += size;
+    shlx        put_buffer, put_buffer, %2          ; put_buffer = (put_buffer << size);
+    or          put_buffer, %1
 %endmacro
 
 %macro kloop_prepare 37                 ;(ko, jno0, ..., jno31, xmm0, xmm1, xmm2, xmm3)
-    pxor        xmm8, xmm8              ; __m128i neg = _mm_setzero_si128();
-    pxor        xmm9, xmm9              ; __m128i neg = _mm_setzero_si128();
-    pxor        xmm10, xmm10            ; __m128i neg = _mm_setzero_si128();
-    pxor        xmm11, xmm11            ; __m128i neg = _mm_setzero_si128();
-    pinsrw      %34, word [r12 + %2  * SIZEOF_WORD], 0  ; xmm_shadow[0] = block[jno0];
-    pinsrw      %35, word [r12 + %10 * SIZEOF_WORD], 0  ; xmm_shadow[8] = block[jno8];
-    pinsrw      %36, word [r12 + %18 * SIZEOF_WORD], 0  ; xmm_shadow[16] = block[jno16];
-    pinsrw      %37, word [r12 + %26 * SIZEOF_WORD], 0  ; xmm_shadow[24] = block[jno24];
-    pinsrw      %34, word [r12 + %3  * SIZEOF_WORD], 1  ; xmm_shadow[1] = block[jno1];
-    pinsrw      %35, word [r12 + %11 * SIZEOF_WORD], 1  ; xmm_shadow[9] = block[jno9];
-    pinsrw      %36, word [r12 + %19 * SIZEOF_WORD], 1  ; xmm_shadow[17] = block[jno17];
-    pinsrw      %37, word [r12 + %27 * SIZEOF_WORD], 1  ; xmm_shadow[25] = block[jno25];
-    pinsrw      %34, word [r12 + %4  * SIZEOF_WORD], 2  ; xmm_shadow[2] = block[jno2];
-    pinsrw      %35, word [r12 + %12 * SIZEOF_WORD], 2  ; xmm_shadow[10] = block[jno10];
-    pinsrw      %36, word [r12 + %20 * SIZEOF_WORD], 2  ; xmm_shadow[18] = block[jno18];
-    pinsrw      %37, word [r12 + %28 * SIZEOF_WORD], 2  ; xmm_shadow[26] = block[jno26];
-    pinsrw      %34, word [r12 + %5  * SIZEOF_WORD], 3  ; xmm_shadow[3] = block[jno3];
-    pinsrw      %35, word [r12 + %13 * SIZEOF_WORD], 3  ; xmm_shadow[11] = block[jno11];
-    pinsrw      %36, word [r12 + %21 * SIZEOF_WORD], 3  ; xmm_shadow[19] = block[jno19];
-    pinsrw      %37, word [r12 + %29 * SIZEOF_WORD], 3  ; xmm_shadow[27] = block[jno27];
-    pinsrw      %34, word [r12 + %6  * SIZEOF_WORD], 4  ; xmm_shadow[4] = block[jno4];
-    pinsrw      %35, word [r12 + %14 * SIZEOF_WORD], 4  ; xmm_shadow[12] = block[jno12];
-    pinsrw      %36, word [r12 + %22 * SIZEOF_WORD], 4  ; xmm_shadow[20] = block[jno20];
-    pinsrw      %37, word [r12 + %30 * SIZEOF_WORD], 4  ; xmm_shadow[28] = block[jno28];
-    pinsrw      %34, word [r12 + %7  * SIZEOF_WORD], 5  ; xmm_shadow[5] = block[jno5];
-    pinsrw      %35, word [r12 + %15 * SIZEOF_WORD], 5  ; xmm_shadow[13] = block[jno13];
-    pinsrw      %36, word [r12 + %23 * SIZEOF_WORD], 5  ; xmm_shadow[21] = block[jno21];
-    pinsrw      %37, word [r12 + %31 * SIZEOF_WORD], 5  ; xmm_shadow[29] = block[jno29];
-    pinsrw      %34, word [r12 + %8  * SIZEOF_WORD], 6  ; xmm_shadow[6] = block[jno6];
-    pinsrw      %35, word [r12 + %16 * SIZEOF_WORD], 6  ; xmm_shadow[14] = block[jno14];
-    pinsrw      %36, word [r12 + %24 * SIZEOF_WORD], 6  ; xmm_shadow[22] = block[jno22];
-    pinsrw      %37, word [r12 + %32 * SIZEOF_WORD], 6  ; xmm_shadow[30] = block[jno30];
-    pinsrw      %34, word [r12 + %9  * SIZEOF_WORD], 7  ; xmm_shadow[7] = block[jno7];
-    pinsrw      %35, word [r12 + %17 * SIZEOF_WORD], 7  ; xmm_shadow[15] = block[jno15];
-    pinsrw      %36, word [r12 + %25 * SIZEOF_WORD], 7  ; xmm_shadow[23] = block[jno23];
+    vpxor        xmm11, xmm11            ; __m128i neg = _mm_setzero_si128();
+    vmovd      %34, [rbx + %2  * SIZEOF_WORD]  ; xmm_shadow[0] = block[jno0];
+    vmovd      %35, [rbx + %10 * SIZEOF_WORD]  ; xmm_shadow[8] = block[jno8];
+    vmovd      %36, [rbx + %18 * SIZEOF_WORD]  ; xmm_shadow[16] = block[jno16];
+    vmovd      %37, [rbx + %26 * SIZEOF_WORD]  ; xmm_shadow[24] = block[jno24];
+    vpinsrw      %34, word [rbx + %3  * SIZEOF_WORD], 1  ; xmm_shadow[1] = block[jno1];
+    vpinsrw      %35, word [rbx + %11 * SIZEOF_WORD], 1  ; xmm_shadow[9] = block[jno9];
+    vpinsrw      %36, word [rbx + %19 * SIZEOF_WORD], 1  ; xmm_shadow[17] = block[jno17];
+    vpinsrw      %37, word [rbx + %27 * SIZEOF_WORD], 1  ; xmm_shadow[25] = block[jno25];
+    vpinsrw      %34, word [rbx + %4  * SIZEOF_WORD], 2  ; xmm_shadow[2] = block[jno2];
+    vpinsrw      %35, word [rbx + %12 * SIZEOF_WORD], 2  ; xmm_shadow[10] = block[jno10];
+    vpinsrw      %36, word [rbx + %20 * SIZEOF_WORD], 2  ; xmm_shadow[18] = block[jno18];
+    vpinsrw      %37, word [rbx + %28 * SIZEOF_WORD], 2  ; xmm_shadow[26] = block[jno26];
+    vpinsrw      %34, word [rbx + %5  * SIZEOF_WORD], 3  ; xmm_shadow[3] = block[jno3];
+    vpinsrw      %35, word [rbx + %13 * SIZEOF_WORD], 3  ; xmm_shadow[11] = block[jno11];
+    vpinsrw      %36, word [rbx + %21 * SIZEOF_WORD], 3  ; xmm_shadow[19] = block[jno19];
+    vpinsrw      %37, word [rbx + %29 * SIZEOF_WORD], 3  ; xmm_shadow[27] = block[jno27];
+    vpinsrw      %34, word [rbx + %6  * SIZEOF_WORD], 4  ; xmm_shadow[4] = block[jno4];
+    vpinsrw      %35, word [rbx + %14 * SIZEOF_WORD], 4  ; xmm_shadow[12] = block[jno12];
+    vpinsrw      %36, word [rbx + %22 * SIZEOF_WORD], 4  ; xmm_shadow[20] = block[jno20];
+    vpinsrw      %37, word [rbx + %30 * SIZEOF_WORD], 4  ; xmm_shadow[28] = block[jno28];
+    vpinsrw      %34, word [rbx + %7  * SIZEOF_WORD], 5  ; xmm_shadow[5] = block[jno5];
+    vpinsrw      %35, word [rbx + %15 * SIZEOF_WORD], 5  ; xmm_shadow[13] = block[jno13];
+    vpinsrw      %36, word [rbx + %23 * SIZEOF_WORD], 5  ; xmm_shadow[21] = block[jno21];
+    vpinsrw      %37, word [rbx + %31 * SIZEOF_WORD], 5  ; xmm_shadow[29] = block[jno29];
+    vpinsrw      %34, word [rbx + %8  * SIZEOF_WORD], 6  ; xmm_shadow[6] = block[jno6];
+    vpinsrw      %35, word [rbx + %16 * SIZEOF_WORD], 6  ; xmm_shadow[14] = block[jno14];
+    vpinsrw      %36, word [rbx + %24 * SIZEOF_WORD], 6  ; xmm_shadow[22] = block[jno22];
+    vpinsrw      %37, word [rbx + %32 * SIZEOF_WORD], 6  ; xmm_shadow[30] = block[jno30];
+    vpinsrw      %34, word [rbx + %9  * SIZEOF_WORD], 7  ; xmm_shadow[7] = block[jno7];
+    vpinsrw      %35, word [rbx + %17 * SIZEOF_WORD], 7  ; xmm_shadow[15] = block[jno15];
+    vpinsrw      %36, word [rbx + %25 * SIZEOF_WORD], 7  ; xmm_shadow[23] = block[jno23];
 %if %1 != 32
-    pinsrw      %37, word [r12 + %33 * SIZEOF_WORD], 7  ; xmm_shadow[31] = block[jno31];
+    vpinsrw      %37, word [rbx + %33 * SIZEOF_WORD], 7  ; xmm_shadow[31] = block[jno31];
 %else
-    pinsrw      %37, ebx, 7             ; xmm_shadow[31] = block[jno31];
+    vpblendw	 %37, %37, xmm11, 0x80
 %endif
-    pcmpgtw     xmm8, %34               ; neg = _mm_cmpgt_epi16(neg, x1);
-    pcmpgtw     xmm9, %35               ; neg = _mm_cmpgt_epi16(neg, x1);
-    pcmpgtw     xmm10, %36              ; neg = _mm_cmpgt_epi16(neg, x1);
-    pcmpgtw     xmm11, %37              ; neg = _mm_cmpgt_epi16(neg, x1);
-    paddw       %34, xmm8               ; x1 = _mm_add_epi16(x1, neg);
-    paddw       %35, xmm9               ; x1 = _mm_add_epi16(x1, neg);
-    paddw       %36, xmm10              ; x1 = _mm_add_epi16(x1, neg);
-    paddw       %37, xmm11              ; x1 = _mm_add_epi16(x1, neg);
-    pxor        %34, xmm8               ; x1 = _mm_xor_si128(x1, neg);
-    pxor        %35, xmm9               ; x1 = _mm_xor_si128(x1, neg);
-    pxor        %36, xmm10              ; x1 = _mm_xor_si128(x1, neg);
-    pxor        %37, xmm11              ; x1 = _mm_xor_si128(x1, neg);
-    pxor        xmm8, %34               ; neg = _mm_xor_si128(neg, x1);
-    pxor        xmm9, %35               ; neg = _mm_xor_si128(neg, x1);
-    pxor        xmm10, %36              ; neg = _mm_xor_si128(neg, x1);
-    pxor        xmm11, %37              ; neg = _mm_xor_si128(neg, x1);
-    movdqa      XMMWORD [t1 + %1 * SIZEOF_WORD], %34           ; _mm_storeu_si128((__m128i *)(t1 + ko), x1);
-    movdqa      XMMWORD [t1 + (%1 + 8) * SIZEOF_WORD], %35     ; _mm_storeu_si128((__m128i *)(t1 + ko + 8), x1);
-    movdqa      XMMWORD [t1 + (%1 + 16) * SIZEOF_WORD], %36    ; _mm_storeu_si128((__m128i *)(t1 + ko + 16), x1);
-    movdqa      XMMWORD [t1 + (%1 + 24) * SIZEOF_WORD], %37    ; _mm_storeu_si128((__m128i *)(t1 + ko + 24), x1);
-    movdqa      XMMWORD [t2 + %1 * SIZEOF_WORD], xmm8          ; _mm_storeu_si128((__m128i *)(t2 + ko), neg);
-    movdqa      XMMWORD [t2 + (%1 + 8) * SIZEOF_WORD], xmm9    ; _mm_storeu_si128((__m128i *)(t2 + ko + 8), neg);
-    movdqa      XMMWORD [t2 + (%1 + 16) * SIZEOF_WORD], xmm10  ; _mm_storeu_si128((__m128i *)(t2 + ko + 16), neg);
-    movdqa      XMMWORD [t2 + (%1 + 24) * SIZEOF_WORD], xmm11  ; _mm_storeu_si128((__m128i *)(t2 + ko + 24), neg);
+    vpcmpgtw     xmm8, xmm11, %34               ; neg = _mm_cmpgt_epi16(neg, x1);
+    vpcmpgtw     xmm9, xmm11, %35               ; neg = _mm_cmpgt_epi16(neg, x1);
+    vpcmpgtw     xmm10, xmm11, %36              ; neg = _mm_cmpgt_epi16(neg, x1);
+    vpcmpgtw     xmm11, xmm11, %37              ; neg = _mm_cmpgt_epi16(neg, x1);
+    vpaddw       %34, xmm8               ; x1 = _mm_add_epi16(x1, neg);
+    vpaddw       %35, xmm9               ; x1 = _mm_add_epi16(x1, neg);
+    vpaddw       %36, xmm10              ; x1 = _mm_add_epi16(x1, neg);
+    vpaddw       %37, xmm11              ; x1 = _mm_add_epi16(x1, neg);
+    vpxor        %34, xmm8               ; x1 = _mm_xor_si128(x1, neg);
+    vpxor        %35, xmm9               ; x1 = _mm_xor_si128(x1, neg);
+    vpxor        %36, xmm10              ; x1 = _mm_xor_si128(x1, neg);
+    vpxor        %37, xmm11              ; x1 = _mm_xor_si128(x1, neg);
+    vpxor        xmm8, %34               ; neg = _mm_xor_si128(neg, x1);
+    vpxor        xmm9, %35               ; neg = _mm_xor_si128(neg, x1);
+    vpxor        xmm10, %36              ; neg = _mm_xor_si128(neg, x1);
+    vpxor        xmm11, %37              ; neg = _mm_xor_si128(neg, x1);
+    vmovdqa      XMMWORD [t1 + %1 * SIZEOF_WORD], %34           ; _mm_storeu_si128((__m128i *)(t1 + ko), x1);
+    vmovdqa      XMMWORD [t1 + (%1 + 8) * SIZEOF_WORD], %35     ; _mm_storeu_si128((__m128i *)(t1 + ko + 8), x1);
+    vmovdqa      XMMWORD [t1 + (%1 + 16) * SIZEOF_WORD], %36    ; _mm_storeu_si128((__m128i *)(t1 + ko + 16), x1);
+    vmovdqa      XMMWORD [t1 + (%1 + 24) * SIZEOF_WORD], %37    ; _mm_storeu_si128((__m128i *)(t1 + ko + 24), x1);
+    vmovdqa      XMMWORD [t2 + %1 * SIZEOF_WORD], xmm8          ; _mm_storeu_si128((__m128i *)(t2 + ko), neg);
+    vmovdqa      XMMWORD [t2 + (%1 + 8) * SIZEOF_WORD], xmm9    ; _mm_storeu_si128((__m128i *)(t2 + ko + 8), neg);
+    vmovdqa      XMMWORD [t2 + (%1 + 16) * SIZEOF_WORD], xmm10  ; _mm_storeu_si128((__m128i *)(t2 + ko + 16), neg);
+    vmovdqa      XMMWORD [t2 + (%1 + 24) * SIZEOF_WORD], xmm11  ; _mm_storeu_si128((__m128i *)(t2 + ko + 24), neg);
 %endmacro
 
 ;
@@ -179,7 +177,9 @@ EXTN(jconst_huff_encode_one_block):
 %define t1          rbp - (DCTSIZE2 * SIZEOF_WORD)
 %define t2          t1 - (DCTSIZE2 * SIZEOF_WORD)
 %define put_buffer  r8
+%define put_buffer_d  r8d
 %define put_bits    r9d
+%define put_bits_q  r9
 %define buffer      rax
 
     align       32
@@ -226,22 +226,19 @@ EXTN(jsimd_huff_encode_one_block_sse2):
     movzx       rdi, byte [r11 + rdi]         ; nbits = JPEG_NBITS(temp);
     ; Emit the Huffman-coded symbol for the number of bits
     mov         r11d,  INT [r14 + rdi * 4]    ; code = dctbl->ehufco[nbits];
-    movzx       esi, byte [r14 + rdi + 1024]  ; size = dctbl->ehufsi[nbits];
-    EMIT_BITS   r11, esi                      ; EMIT_BITS(code, size)
+    lea		rsi, [r14+rdi]
+    movzx       esi, byte [rsi + 1024]  ; size = dctbl->ehufsi[nbits];
+    EMIT_BITS   r11, rsi                      ; EMIT_BITS(code, size)
 
     ; Mask off any extra bits in code
-    mov         esi, 1
-    mov         ecx, edi
-    shl         esi, cl
-    dec         esi
-    and         ebx, esi                ; temp2 &= (((JLONG)1)<<nbits) - 1;
+    bzhi	ebx, ebx, edi
 
     ; Emit that number of bits of the value, if positive,
     ; or the complement of its magnitude, if negative.
-    EMIT_BITS   rbx, edi                ; EMIT_BITS(temp2, nbits)
+    EMIT_BITS   rbx, rdi                ; EMIT_BITS(temp2, nbits)
 
     ; Prepare data
-    xor         ebx, ebx
+    mov		rbx, r12
     kloop_prepare  0,  1,  8,  16, 9,  2,  3,  10, 17, 24, 32, 25, \
                    18, 11, 4,  5,  12, 19, 26, 33, 40, 48, 41, 34, \
                    27, 20, 13, 6,  7,  14, 21, 28, 35, \
@@ -251,27 +248,19 @@ EXTN(jsimd_huff_encode_one_block_sse2):
                    53, 60, 61, 54, 47, 55, 62, 63, 63, \
                    xmm4, xmm5, xmm6, xmm7
 
-    pxor        xmm8, xmm8
-    pcmpeqw     xmm0, xmm8              ; tmp0 = _mm_cmpeq_epi16(tmp0, zero);
-    pcmpeqw     xmm1, xmm8              ; tmp1 = _mm_cmpeq_epi16(tmp1, zero);
-    pcmpeqw     xmm2, xmm8              ; tmp2 = _mm_cmpeq_epi16(tmp2, zero);
-    pcmpeqw     xmm3, xmm8              ; tmp3 = _mm_cmpeq_epi16(tmp3, zero);
-    pcmpeqw     xmm4, xmm8              ; tmp4 = _mm_cmpeq_epi16(tmp4, zero);
-    pcmpeqw     xmm5, xmm8              ; tmp5 = _mm_cmpeq_epi16(tmp5, zero);
-    pcmpeqw     xmm6, xmm8              ; tmp6 = _mm_cmpeq_epi16(tmp6, zero);
-    pcmpeqw     xmm7, xmm8              ; tmp7 = _mm_cmpeq_epi16(tmp7, zero);
-    packsswb    xmm0, xmm1              ; tmp0 = _mm_packs_epi16(tmp0, tmp1);
-    packsswb    xmm2, xmm3              ; tmp2 = _mm_packs_epi16(tmp2, tmp3);
-    packsswb    xmm4, xmm5              ; tmp4 = _mm_packs_epi16(tmp4, tmp5);
-    packsswb    xmm6, xmm7              ; tmp6 = _mm_packs_epi16(tmp6, tmp7);
-    pmovmskb    r11d, xmm0              ; index  = ((uint64_t)_mm_movemask_epi8(tmp0)) << 0;
-    pmovmskb    r12d, xmm2              ; index  = ((uint64_t)_mm_movemask_epi8(tmp2)) << 16;
-    pmovmskb    r13d, xmm4              ; index  = ((uint64_t)_mm_movemask_epi8(tmp4)) << 32;
-    pmovmskb    r14d, xmm6              ; index  = ((uint64_t)_mm_movemask_epi8(tmp6)) << 48;
-    shl         r12, 16
-    shl         r14, 16
-    or          r11, r12
-    or          r13, r14
+    vinserti128	 ymm0, ymm0, xmm2, 0x1   ;xmm2,xmm0
+    vinserti128	 ymm1, ymm1, xmm3, 0x1   ;xmm3,xmm1
+    vinserti128	 ymm4, ymm4, xmm6, 0x1   ;xmm6,xmm4
+    vinserti128	 ymm5, ymm5, xmm7, 0x1   ;xmm7,xmm5
+    vpxor        xmm7, xmm7
+    vpcmpeqw     ymm0, ymm0, ymm7              ; tmp0 = _mm_cmpeq_epi16(tmp0, zero);
+    vpcmpeqw     ymm1, ymm1, ymm7              ; tmp1 = _mm_cmpeq_epi16(tmp1, zero);
+    vpcmpeqw     ymm4, ymm4, ymm7              ; tmp4 = _mm_cmpeq_epi16(tmp4, zero);
+    vpcmpeqw     ymm5, ymm5, ymm7              ; tmp5 = _mm_cmpeq_epi16(tmp5, zero);
+    vpacksswb    ymm0, ymm0, ymm1              ; tmp0 = _mm_packs_epi16(tmp0, tmp1);
+    vpacksswb    ymm4, ymm4, ymm5              ; tmp4 = _mm_packs_epi16(tmp4, tmp5);
+    vpmovmskb    r13d, ymm4              ; index  = ((uint64_t)_mm_movemask_epi8(tmp4)) << 32;
+    vpmovmskb    r11d, ymm0              ; index  = ((uint64_t)_mm_movemask_epi8(tmp0)) << 0;
     shl         r13, 32
     or          r11, r13
     not         r11                     ; index = ~index;
@@ -283,18 +272,19 @@ EXTN(jsimd_huff_encode_one_block_sse2):
     movzx       r14d, byte [r15 + 1024 + 240]  ; size_0xf0 = actbl->ehufsi[0xf0];
     lea         rsi, [t1]
 .BLOOP:
-    bsf         r12, r11                     ; r = __builtin_ctzl(index);
+    tzcnt       r12, r11                     ; r = __builtin_ctzl(index);
+    test	r11, r11
     jz          .ELOOP
-    mov         rcx, r12
     lea         rsi, [rsi+r12*2]             ; k += r;
-    shr         r11, cl                      ; index >>= r;
+    shrx        r11, r11, r12                ; index >>= r;
     movzx       rdi, word [rsi]              ; temp = t1[k];
     lea         rbx, [rel jpeg_nbits_table]
     movzx       rdi, byte [rbx + rdi]        ; nbits = JPEG_NBITS(temp);
+align 16
 .BRLOOP:
     cmp         r12, 16                 ; while (r > 15) {
     jl          .ERLOOP
-    EMIT_BITS   r13, r14d               ; EMIT_BITS(code_0xf0, size_0xf0)
+    EMIT_BITS   r13, r14               ; EMIT_BITS(code_0xf0, size_0xf0)
     sub         r12, 16                 ; r -= 16;
     jmp         .BRLOOP
 .ERLOOP:
@@ -304,23 +294,22 @@ EXTN(jsimd_huff_encode_one_block_sse2):
     shl         r12, 4                        ; temp3 = (r << 4) + nbits;
     add         r12, rdi
     mov         ebx,  INT [r15 + r12 * 4]     ; code = actbl->ehufco[temp3];
-    movzx       ecx, byte [r15 + r12 + 1024]  ; size = actbl->ehufsi[temp3];
+    lea		rcx, [r15 + r12]
+    movzx       ecx, byte [rcx + 1024]  ; size = actbl->ehufsi[temp3];
     PUT_BITS    rbx
 
     ;EMIT_CODE(code, size)
 
     movsx       ebx, word [rsi-DCTSIZE2*2]    ; temp2 = t2[k];
     ; Mask off any extra bits in code
-    mov         rcx, rdi
-    mov         rdx, 1
-    shl         rdx, cl
-    dec         rdx
-    and         rbx, rdx                ; temp2 &= (((JLONG)1)<<nbits) - 1;
-    PUT_BITS    rbx                     ; PUT_BITS(temp2, nbits)
+    bzhi	ebx, ebx, edi
+    add         put_bits, edi           ; put_bits += size;
+    shlx        put_buffer, put_buffer, rdi          ; put_buffer = (put_buffer << size);
+    or          put_buffer, rbx
 
-    shr         r11, 1                  ; index >>= 1;
     add         rsi, 2                  ; ++k;
-    jmp         .BLOOP
+    shr         r11, 1                  ; index >>= 1;
+    jnz         .BLOOP
 .ELOOP:
     ; If the last coef(s) were zero, emit an end-of-block code
     lea         rdi, [t1 + (DCTSIZE2-1) * 2]  ; r = DCTSIZE2-1-k;
@@ -328,7 +317,7 @@ EXTN(jsimd_huff_encode_one_block_sse2):
     je          .EFN
     mov         ebx,  INT [r15]               ; code = actbl->ehufco[0];
     movzx       r12d, byte [r15 + 1024]       ; size = actbl->ehufsi[0];
-    EMIT_BITS   rbx, r12d
+    EMIT_BITS   rbx, r12
 .EFN:
     pop         r10
     ; Save put_buffer & put_bits
