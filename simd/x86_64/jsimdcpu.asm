@@ -36,9 +36,9 @@ EXTN(jpeg_simd_cpu_support):
     push        rbx
     push        rdi
 
-
+    
     ; Assume that all x86-64 processors support SSE & SSE2 instructions
-    or          edi, JSIMD_SSE2|JSIMD_SSE
+    mov          edi, JSIMD_SSE2|JSIMD_SSE
 
     ; Check whether CPUID leaf 07H is supported
     ; (leaf 07H is used to check for AVX2 instruction support)
